@@ -13,7 +13,3 @@ public class SimulationMessage {
     private MessageType type;
     private Object payload;
 }
-
-enum MessageType{
-    PROPOSAL, ACCEPT, COMMIT, HEARTBEAT, FAILURE, RECOVERY
-}

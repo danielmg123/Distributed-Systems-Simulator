@@ -36,4 +36,22 @@ public class SimulationController {
         simulationService.deleteSimulation(id);
         return ResponseEntity.ok().build();
     }
+
+    @PostMapping("/{id}/run")
+    public ResponseEntity<String> runSimulation(@PathVariable String id) {
+        simulationService.runSimulation(id);
+        return ResponseEntity.ok("Simulation started with ID: " + id);
+    }
+
+    @PostMapping("/{id}/failNode/{nodeId}")
+    public ResponseEntity<String> failNode(@PathVariable String id, @PathVariable String nodeId) {
+        simulationService.failNode(id, nodeId);
+        return ResponseEntity.ok("Node " + nodeId + " failed in simulation " + id);
+    }
+
+    @PostMapping("/{id}/stop")
+    public ResponseEntity<String> stopSimulation(@PathVariable String id) {
+        simulationService.stopSimulation(id);
+        return ResponseEntity.ok("Simulation stopped for ID: " + id);
+    }
 }

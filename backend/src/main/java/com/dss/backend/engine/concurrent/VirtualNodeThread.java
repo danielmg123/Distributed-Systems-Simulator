@@ -4,6 +4,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
+import com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
 
@@ -35,7 +36,14 @@ public class VirtualNodeThread extends Thread {
                     // Node is failed, drop or ignore message
                     continue;
                 }
-                processMessage(msg);
+                
+                // Defer to the algorithm logic
+                if (algorithm instanceof PaxosAlgorithm) {
+                    ((PaxosAlgorithm)algorithm).handleMessage(msg);
+                } else {
+                    // or if your algorithm interface has a universal "handleMessage"
+                    // algorithm.handleMessage(msg);
+                }
             }
             catch(InterruptedException ex){
                 Thread.currentThread().interrupt();
@@ -44,25 +52,25 @@ public class VirtualNodeThread extends Thread {
        }
     }
 
-    private void processMessage(SimulationMessage msg){
-        // example: if its a PROPOSAL or ACCEPT message, call the algorithm 
-        switch(msg.getType()){
-            case PROPOSAL:
-                algorithm.propose(msg.getPayload());
-                break;
-            case ACCEPT:
-                algorithm.accept(msg.getPayload());
-                break;
-            case COMMIT:
-                algorithm.commit(msg.getPayload());
-                break;
-            default:
-                break;
-        }
+    // private void processMessage(SimulationMessage msg){
+    //     // example: if its a PROPOSAL or ACCEPT message, call the algorithm 
+    //     switch(msg.getType()){
+    //         case PROPOSAL:
+    //             algorithm.propose(msg.getPayload());
+    //             break;
+    //         case ACCEPT:
+    //             algorithm.accept(msg.getPayload());
+    //             break;
+    //         case COMMIT:
+    //             algorithm.commit(msg.getPayload());
+    //             break;
+    //         default:
+    //             break;
+    //     }
 
-        // possibly respond or broadcast new messages using router
-        // ...
-    }
+    //     // possibly respond or broadcast new messages using router
+    //     // ...
+    // }
 
     public void enqueueMessage(SimulationMessage msg){
         inboundQueue.offer(msg);
