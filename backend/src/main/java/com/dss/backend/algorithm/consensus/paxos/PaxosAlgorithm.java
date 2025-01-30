@@ -10,58 +10,78 @@ import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.engine.concurrent.MessageType;
 
 /**
- * Paxos implementation that stores a PaxosState for each node.
- * Node concurrency is handled by VirtualNodeThread; 
+ * Paxos implementation that merges information from all PROMISEs:
+ *   - We store data for each proposalNumber separately in ProposerData.
+ *   - If any acceptor has an acceptedValue with a higher acceptedId, 
+ *     we adopt that value for Phase 2.
  */
 public class PaxosAlgorithm implements ConsensusAlgorithm {
 
-    private final PaxosState paxosState;      // Per-node Paxos data
-    private final MessageRouter router;       // For sending messages
-    private final List<String> allNodeIds;    // All participants in the cluster
-    private final String myNodeId;            // This nodes unique ID
+    // Tracks per-node Paxos status (promisedId, acceptedId, etc.)
+    private final PaxosState paxosState;
 
-    // A local counter for generating unique proposal numbers
-    // (You can combine it with nodeId if needed.)
+    // For sending messages between nodes
+    private final MessageRouter router;
+
+    // All participants in the cluster
+    private final List<String> allNodeIds;
+
+    // This node's unique ID
+    private final String myNodeId;
+
+    // Local counter for generating unique proposal numbers
     private final AtomicInteger proposalCounter = new AtomicInteger(0);
 
-    // Keep track of how many promises we've received for a given proposalNumber
-    private final ConcurrentHashMap<Integer, Integer> promiseCount = new ConcurrentHashMap<>();
+    // The number of nodes needed for majority
+    private final int majority;
+
+    // For each proposalNumber we (as Proposer) start, we store ProposerData
+    private final ConcurrentHashMap<Integer, ProposerData> proposalDataMap = new ConcurrentHashMap<>();
+
+    // Accept-count for each proposalNumber (Phase 2)
+    private final ConcurrentHashMap<Integer, Integer> acceptCountMap = new ConcurrentHashMap<>();
 
     public PaxosAlgorithm(String myNodeId, List<String> allNodeIds, MessageRouter router) {
         this.myNodeId = myNodeId;
         this.allNodeIds = allNodeIds;
         this.router = router;
-
-        // Initialize the PaxosState for this node
         this.paxosState = new PaxosState(myNodeId);
+
+        this.majority = (allNodeIds.size() / 2) + 1;
     }
 
     @Override
     public void propose(Object value) {
-        // Start Paxos Phase 1: Prepare
-        int proposalNum = generateNextProposalNumber();
-        broadcastPrepareRequest(proposalNum, value);
+        int proposalNumber = generateNextProposalNumber();
+
+        // Initialize the data structure for tracking Phase 1 (PROMISE) replies
+        ProposerData data = new ProposerData(value);
+        proposalDataMap.put(proposalNumber, data);
+
+        broadcastPrepareRequest(proposalNumber, value);
     }
 
     @Override
     public boolean accept(Object proposal) {
-        // Might not be directly used in Paxos, might prefer separate method calls 
-        // for "onAcceptRequest" etc...
+        // Not directly used. We handle ACCEPT_REQUEST via handleMessage().
         return false;
     }
 
     @Override
     public void commit(Object value) {
-        // In Paxos, a "commit" or "chosen" phase can be signaled once I get a majority of ACCEPTED
-        // might broadcast a "Learned" message or locally mark the consensus outcome 
+        // Mark the chosen value in local state
+        paxosState.setChosenValue(value);
+        System.out.println("Node " + myNodeId + " has COMMITTED value: " + value);
+
+        // Optionally broadcast a final "CHOSEN" or "COMMIT" message 
+        // so other nodes can learn the result.
+        // broadcastCommit(proposalNumber, value);
     }
 
-    /**
-     * This method is invoked from the VirtualNodeThread when a message arrives.
-     */
+    // Called by the VirtualNodeThread when a message arrives
     public void handleMessage(SimulationMessage msg) {
         if (!(msg.getPayload() instanceof PaxosPayload)) {
-            return; // Not a Paxos message or some error handling
+            return; // not a Paxos message
         }
 
         PaxosPayload payload = (PaxosPayload) msg.getPayload();
@@ -79,22 +99,40 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
                 onAccepted(msg.getSourceNodeId(), payload);
                 break;
             default:
-                // ignore or handle other types
+                // (OPTIONAL) handle COMMIT or other messages
                 break;
         }
     }
 
-    // ---------- Phase 1: Prepare / Promise ----------
+    // ---------------------- Phase 1: Prepare / Promise ----------------------
+    private void broadcastPrepareRequest(int proposalNumber, Object originalValue) {
+        // We attach the originalValue in case no acceptor has a prior acceptedValue
+        PaxosPayload payload = new PaxosPayload();
+        payload.setProposalNumber(proposalNumber);
+        payload.setProposedValue(originalValue);
+
+        for (String nodeId : allNodeIds) {
+            SimulationMessage msg = new SimulationMessage(
+                myNodeId,
+                nodeId,
+                MessageType.PREPARE_REQUEST,
+                payload
+            );
+            router.messageSent(msg);
+        }
+    }
+
     private void onPrepareRequest(String sourceNode, PaxosPayload payload) {
         int proposalNumber = payload.getProposalNumber();
 
-        // If proposalNumber >= promisedId, promise not to accept proposals < proposalNumber
+        // If proposalNumber >= promisedId, we promise not to accept anything below it
         if (proposalNumber >= paxosState.getPromisedId()) {
             paxosState.setPromisedId(proposalNumber);
 
             // Send PROMISE back to proposer
             PaxosPayload reply = new PaxosPayload();
             reply.setProposalNumber(proposalNumber);
+            // Return our currently accepted proposal info, if any
             reply.setAcceptedId(paxosState.getAcceptedId());
             reply.setAcceptedValue(paxosState.getAcceptedValue());
 
@@ -106,37 +144,55 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
             );
             router.messageSent(promiseMsg);
         }
-        // else, ignore or send a reject message (not shown here).
+        // else: we could send a REJECT message if we want, or just ignore
     }
 
     private void onPromise(String sourceNode, PaxosPayload payload) {
         int proposalNumber = payload.getProposalNumber();
-        promiseCount.merge(proposalNumber, 1, Integer::sum); // count one more promise
+        ProposerData data = proposalDataMap.get(proposalNumber);
+        if (data == null) {
+            // Possibly a stale or duplicated message. Ignore.
+            return;
+        }
 
-        // If the acceptor has accepted a proposal in the past, we might need to adopt that value
-        // This is the "highest-numbered proposal" logic, omitted here for brevity.
-        // e.g. compare payload.getAcceptedId() with the local record of the highest accepted.
+        // 1. Bump the count of promises
+        data.promiseCount += 1;
 
-        // Check if we have a majority
-        int count = promiseCount.get(proposalNumber);
-        int majority = (allNodeIds.size() / 2) + 1;
-        if (count >= majority) {
-            // Move to Phase 2: Accept
-            // Possibly adopt the acceptedValue from the highest acceptedId, if any
-            Object chosenValue = payload.getProposedValue(); 
-            // might store or update that chosenValue from data collected
+        // 2. Check if the acceptor has a previously accepted proposal
+        int acceptedId = payload.getAcceptedId();
+        Object acceptedValue = payload.getAcceptedValue();
 
-            broadcastAcceptRequest(proposalNumber, chosenValue);
+        // If the acceptor has accepted something with the highest acceptedId so far, adopt it.
+        if (acceptedId > data.highestAcceptedId) {
+            data.highestAcceptedId = acceptedId;
+            data.highestAcceptedValue = acceptedValue;
+        }
+
+        // 3. If we reached a majority, move to Phase 2
+        if (data.promiseCount >= majority) {
+            // Decide what value to use for Accept:
+            // If no acceptor had an accepted proposal, we use our originalProposedValue.
+            Object finalValue;
+            if (data.highestAcceptedId > -1 && data.highestAcceptedValue != null) {
+                finalValue = data.highestAcceptedValue;
+            } else {
+                finalValue = data.originalValue;
+            }
+
+            broadcastAcceptRequest(proposalNumber, finalValue);
         }
     }
 
-    // ---------- Phase 2: Accept / Accepted ----------
+    // ---------------------- Phase 2: Accept / Accepted ----------------------
     private void broadcastAcceptRequest(int proposalNumber, Object value) {
-        for (String nodeId : allNodeIds) {
-            PaxosPayload payload = new PaxosPayload();
-            payload.setProposalNumber(proposalNumber);
-            payload.setProposedValue(value);
+        // Re-initialize our acceptCount (so if we see multiple proposals in parallel, each has its own count)
+        acceptCountMap.put(proposalNumber, 0);
 
+        PaxosPayload payload = new PaxosPayload();
+        payload.setProposalNumber(proposalNumber);
+        payload.setProposedValue(value);
+
+        for (String nodeId : allNodeIds) {
             SimulationMessage msg = new SimulationMessage(
                 myNodeId,
                 nodeId,
@@ -149,12 +205,13 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
 
     private void onAcceptRequest(String sourceNode, PaxosPayload payload) {
         int proposalNumber = payload.getProposalNumber();
+
+        // If proposalNumber >= promisedId, accept
         if (proposalNumber >= paxosState.getPromisedId()) {
-            // Accept it
             paxosState.setAcceptedId(proposalNumber);
             paxosState.setAcceptedValue(payload.getProposedValue());
 
-            // Acknowledge
+            // Send ACCEPTED
             PaxosPayload acceptedPayload = new PaxosPayload();
             acceptedPayload.setProposalNumber(proposalNumber);
             acceptedPayload.setProposedValue(payload.getProposedValue());
@@ -167,43 +224,81 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
             );
             router.messageSent(acceptedMsg);
         }
-        // else, ignore or send a reject
+        // else: we could send a REJECT or ignore
     }
 
     private void onAccepted(String sourceNode, PaxosPayload payload) {
-        // Proposer sees that an acceptor accepted this proposalNumber
-        // If we see a majority of ACCEPTED, we've "chosen" the value => "commit" 
-        // For brevity, omitted. we can keep a separate acceptCount map similar to promiseCount.
+        int proposalNumber = payload.getProposalNumber();
+        Integer oldVal = acceptCountMap.get(proposalNumber);
+        if (oldVal == null) {
+            // Possibly stale
+            return;
+        }
 
-        // example:
-        // acceptCount.merge(payload.getProposalNumber(), 1, Integer::sum);
-        // if acceptCount >= majority => commit(payload.getProposedValue())
+        int newVal = oldVal + 1;
+        acceptCountMap.put(proposalNumber, newVal);
+
+        // Check majority
+        if (newVal >= majority) {
+            // The value is chosen
+            commit(payload.getProposedValue());
+
+            // (Optional) Mark that this proposalNumber is complete to ignore further messages.
+            // e.g... remove from data structures
+        }
     }
 
-    private void broadcastPrepareRequest(int proposalNumber, Object value) {
-        for (String nodeId : allNodeIds) {
-            PaxosPayload payload = new PaxosPayload();
-            payload.setProposalNumber(proposalNumber);
-            payload.setProposedValue(value);
+    // ---------- Helper: Generate Unique Proposal IDs ----------
+    private int generateNextProposalNumber() {
+        // If each node has a numeric ID, we can combine them for uniqueness across cluster
+        // For now, just do localCount
+        return proposalCounter.incrementAndGet();
+    }
 
+    // Optional final "commit" broadcast
+    /*
+    private void broadcastCommit(int proposalNumber, Object value) {
+        PaxosPayload payload = new PaxosPayload();
+        payload.setProposalNumber(proposalNumber);
+        payload.setProposedValue(value);
+
+        for (String nodeId : allNodeIds) {
             SimulationMessage msg = new SimulationMessage(
                 myNodeId,
                 nodeId,
-                MessageType.PREPARE_REQUEST,
+                MessageType.COMMIT,
                 payload
             );
             router.messageSent(msg);
         }
     }
 
-    private int generateNextProposalNumber() {
-        // A naive approach:
-        // Combine local counter with nodeId to ensure uniqueness across nodes, 
-        // e.g.:  (counter << 8) + myNodeIdAsInt
-        int localCount = proposalCounter.incrementAndGet();
-        // If nodeId is numeric, we can do something like:
-        // return (localCount << 16) | Integer.parseInt(myNodeId);
-        // Or just do localCount if we know each nodeId is unique in some global sense
-        return localCount;
+    private void onCommitMessage(String sourceNode, PaxosPayload payload) {
+        paxosState.setChosenValue(payload.getProposedValue());
+        System.out.println("Node " + myNodeId + " learned CHOSEN value: " + payload.getProposedValue());
+    }
+    */
+
+    /**
+     * Data structure for Phase 1 at the proposer:
+     * We store how many PROMISEs we have, the original proposed value,
+     * and track the highest accepted proposal among all PROMISE responses.
+     */
+    private static class ProposerData {
+        // The value this proposer started with in propose()
+        final Object originalValue;
+
+        // How many PROMISEs received so far
+        int promiseCount = 0;
+
+        // The highest acceptedId seen among all PROMISEs
+        int highestAcceptedId = -1;
+
+        // The value associated with that highest acceptedId
+        Object highestAcceptedValue = null;
+
+        ProposerData(Object originalValue) {
+            this.originalValue = originalValue;
+        }
     }
 }

@@ -13,7 +13,8 @@ public class PaxosState {
     private int acceptedId = -1;       // Highest proposal ID we have accepted
     private Object acceptedValue = null; // Value associated with the highest accepted proposal
 
-    // Additional fields for the logic if needed
-    // e.g. a local proposal counter for generating unique IDs
-    // or a variable to store "chosen" value once consensus is reached.
+    // New field for the final chosen value
+    private Object chosenValue = null;  
+
+    // Additional fields if needed
 }

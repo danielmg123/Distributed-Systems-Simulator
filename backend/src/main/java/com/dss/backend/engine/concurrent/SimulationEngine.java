@@ -4,8 +4,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.springframework.web.util.BindErrorUtils;
-
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.model.Node;
 
@@ -46,7 +44,17 @@ public class SimulationEngine {
         // signal threads to stop
         running = false;
         for(VirtualNodeThread vThread : nodeThreads.values()){
-            vThread.stop();
+            vThread.requestStop();
+        }
+
+        // Wait for threads to finish before returning
+        for (VirtualNodeThread vThread : nodeThreads.values()) {
+            try {
+                vThread.join(); // Ensures all threads complete before exiting
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.err.println("Interrupted while stopping simulation.");
+            }
         }
     }
 
