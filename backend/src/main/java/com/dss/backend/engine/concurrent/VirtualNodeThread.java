@@ -36,16 +36,8 @@ public class VirtualNodeThread extends Thread {
                     continue;
                 }
                 
-                // ---- HOOK FOR RAFT OR PAXOS ----
-                if (algorithm instanceof com.dss.backend.algorithm.consensus.raft.Raft raftImpl) {
-                    raftImpl.handleMessage(msg);
-                }
-                else if (algorithm instanceof com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm paxosImpl) {
-                    paxosImpl.handleMessage(msg);
-                }
-                else {
-                    // fallback or do nothing
-                }
+                algorithm.handleMessage(msg);
+                
             }
             catch(InterruptedException ex){
                 Thread.currentThread().interrupt();

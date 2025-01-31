@@ -117,8 +117,9 @@ public class Raft implements ConsensusAlgorithm {
 
     // ------------------------------
     // Message Handling
-    // (Typically invoked by VirtualNodeThread)
+    // Invoked by VirtualNodeThread
     // ------------------------------
+    @Override
     public void handleMessage(SimulationMessage msg) {
         if (msg.getPayload() instanceof RaftPayload rp) {
             switch (rp.getType()) {

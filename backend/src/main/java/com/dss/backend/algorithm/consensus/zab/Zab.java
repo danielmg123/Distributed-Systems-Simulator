@@ -3,6 +3,7 @@ package com.dss.backend.algorithm.consensus.zab;
 import org.springframework.stereotype.Component;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
+import com.dss.backend.engine.concurrent.SimulationMessage;
 
 @Component
 public class Zab implements ConsensusAlgorithm {
@@ -23,6 +24,12 @@ public class Zab implements ConsensusAlgorithm {
     public void commit(Object value) {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'commit'");
+    }
+
+    @Override
+    public void handleMessage(SimulationMessage msg) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'handleMessage'");
     }
     
 }

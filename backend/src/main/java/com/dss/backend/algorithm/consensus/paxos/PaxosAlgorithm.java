@@ -79,11 +79,12 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
     }
 
     // Called by the VirtualNodeThread when a message arrives
+    @Override
     public void handleMessage(SimulationMessage msg) {
         if (!(msg.getPayload() instanceof PaxosPayload)) {
             return; // not a Paxos message
         }
-
+    
         PaxosPayload payload = (PaxosPayload) msg.getPayload();
         switch (msg.getType()) {
             case PREPARE_REQUEST:
@@ -99,7 +100,7 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
                 onAccepted(msg.getSourceNodeId(), payload);
                 break;
             default:
-                // (OPTIONAL) handle COMMIT or other messages
+                // optional for COMMIT, or ignore
                 break;
         }
     }
