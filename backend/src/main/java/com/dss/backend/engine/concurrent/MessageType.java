@@ -13,5 +13,11 @@ public enum MessageType {
     PREPARE_REQUEST,
     PROMISE,
     ACCEPT_REQUEST,
-    ACCEPTED
+    ACCEPTED,
+
+    // Raft-specific types
+    REQUEST_VOTE,
+    REQUEST_VOTE_RESPONSE,
+    APPEND_ENTRIES,
+    APPEND_ENTRIES_RESPONSE
 }

@@ -4,7 +4,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
-import com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
 
@@ -37,12 +36,15 @@ public class VirtualNodeThread extends Thread {
                     continue;
                 }
                 
-                // Defer to the algorithm logic
-                if (algorithm instanceof PaxosAlgorithm) {
-                    ((PaxosAlgorithm)algorithm).handleMessage(msg);
-                } else {
-                    // or if your algorithm interface has a universal "handleMessage"
-                    // algorithm.handleMessage(msg);
+                // ---- HOOK FOR RAFT OR PAXOS ----
+                if (algorithm instanceof com.dss.backend.algorithm.consensus.raft.Raft raftImpl) {
+                    raftImpl.handleMessage(msg);
+                }
+                else if (algorithm instanceof com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm paxosImpl) {
+                    paxosImpl.handleMessage(msg);
+                }
+                else {
+                    // fallback or do nothing
                 }
             }
             catch(InterruptedException ex){
