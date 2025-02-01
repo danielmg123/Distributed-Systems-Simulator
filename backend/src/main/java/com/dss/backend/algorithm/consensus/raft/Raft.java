@@ -6,25 +6,14 @@ import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * A minimal skeleton for Raft consensus:
- *  - Leader election
- *  - Heartbeats (AppendEntries)
- *  - Basic log structure (incomplete for actual replication)
- *
- * This example shows how you'd track currentTerm, votedFor, role, and handle
- * the main RPCs: RequestVote and AppendEntries. Real log replication details
- * are greatly simplified here.
- *
- * NOTE: For concurrency, you’ll likely rely on your VirtualNodeThread and
- * handleMessage() calls just like Paxos. This skeleton does minimal
- * timeouts or scheduling. In a real environment, you'd have to simulate
- * timers for election, heartbeats, etc.
+ * A more complete Raft example with basic log replication.
+ * Does not include timer-based election logic.
  */
 @Component
 public class Raft implements ConsensusAlgorithm {
@@ -41,14 +30,22 @@ public class Raft implements ConsensusAlgorithm {
     // ------------------------------
     // Basic Raft Node State
     // ------------------------------
-    private volatile int currentTerm = 0;     // latest term server has seen
-    private volatile String votedFor = null;  // candidateId that received vote in current term
+    private volatile int currentTerm = 0;   
+    private volatile String votedFor = null;
     private volatile Role role = Role.FOLLOWER;
 
-    // Minimal in-memory "log"
-    // Real Raft would keep a list of LogEntries {term, index, command}
-    // We'll skip the actual commands for brevity
-    private final AtomicInteger commitIndex = new AtomicInteger(0);
+    // Our in-memory log of entries:
+    private final List<LogEntry> log = new ArrayList<>();
+
+    // The highest log index known to be committed
+    private volatile int commitIndex = 0;
+
+    // The highest log index that this server has applied to its state machine
+    private volatile int lastApplied = 0;
+
+    // For leader: track nextIndex and matchIndex for each follower
+    private final Map<String, Integer> nextIndexMap = new ConcurrentHashMap<>();
+    private final Map<String, Integer> matchIndexMap = new ConcurrentHashMap<>();
 
     // The ID of this node, plus the entire cluster membership
     private final String myNodeId;
@@ -60,6 +57,8 @@ public class Raft implements ConsensusAlgorithm {
     // For leader election, track how many votes we've gotten this term
     private final Map<Integer, Integer> votesReceivedPerTerm = new ConcurrentHashMap<>();
 
+    // Keep track of whether we are alive or just constructed
+    private boolean initialized = false;
 
     public Raft(String nodeId, List<String> allNodeIds, MessageRouter router) {
         this.myNodeId = nodeId;
@@ -68,88 +67,80 @@ public class Raft implements ConsensusAlgorithm {
     }
 
     /**
-     * This no-arg constructor is used by Spring if you have @Component scanning.
-     * You’d need a setter or separate init method to populate nodeId, allNodeIds, etc.
-     * Alternatively, remove the @Component annotation and instantiate Raft yourself.
+     * No-arg constructor for Spring bean scanning; we override with our own init method.
      */
     public Raft() {
-        // This leaves everything null or zero. Not good for real usage but helps avoid
-        // a bean creation error if you do @Autowired somewhere. 
-        // For a real system, you'd remove or handle properly.
         this.myNodeId = null;
         this.allNodeIds = null;
         this.router = null;
     }
 
-    // ------------------------------
-    // Implementation of ConsensusAlgorithm
-    // ------------------------------
     @Override
     public void propose(Object value) {
-        // In Raft, new commands are typically appended to the leader’s log.
-        // If we’re the leader, we can replicate. If not, we forward or ignore.
-        if (role == Role.LEADER) {
-            // Example: append "value" to our local log
-            System.out.println("Raft Node " + myNodeId + " received propose() for " + value + " as LEADER");
-            // In real Raft, you’d store the entry, then replicate via AppendEntries.
-            // For now, we’ll just fake it:
-            replicateLogEntry(value);
-        } else {
+        // Only the leader accepts new commands
+        if (role != Role.LEADER) {
             System.out.println("Raft Node " + myNodeId + " is not LEADER; ignoring propose() or forwarding to leader.");
-            // We could forward to known leader if we track it. 
+            return;
         }
+        // Append to local log (term = currentTerm)
+        LogEntry entry = new LogEntry(currentTerm, value);
+        log.add(entry);
+        int newEntryIndex = log.size() - 1;
+
+        System.out.println("Leader " + myNodeId + " appended new command at index=" + newEntryIndex
+                           + " for term=" + currentTerm);
+
+        // Update nextIndex/matchIndex for this leader itself
+        // In normal Raft, leader always “matchIndex = lastLogIndex” for self
+        matchIndexMap.put(myNodeId, newEntryIndex);
+
+        // Replicate to followers
+        broadcastAppendEntries();
     }
 
     @Override
     public boolean accept(Object proposal) {
-        // In Raft, accept() isn’t exactly used. 
-        // Accepting log entries is done in handleAppendEntries.
+        // Unused direct accept method in Raft
         return false;
     }
 
     @Override
     public void commit(Object value) {
-        // In real Raft, we "commit" a log entry once it's safely replicated on a majority.
-        // For a skeleton, let's just print:
+        // If we wanted an external callback each time we commit, we could do so here.
         System.out.println("Raft Node " + myNodeId + " commits: " + value);
-        commitIndex.incrementAndGet(); // pretend each commit increments the index
     }
 
-    // ------------------------------
-    // Message Handling
-    // Invoked by VirtualNodeThread
-    // ------------------------------
     @Override
     public void handleMessage(SimulationMessage msg) {
-        if (msg.getPayload() instanceof RaftPayload rp) {
-            switch (rp.getType()) {
-                case REQUEST_VOTE -> handleRequestVote(msg.getSourceNodeId(), rp);
-                case REQUEST_VOTE_RESPONSE -> handleRequestVoteResponse(msg.getSourceNodeId(), rp);
-                case APPEND_ENTRIES -> handleAppendEntries(msg.getSourceNodeId(), rp);
-                case APPEND_ENTRIES_RESPONSE -> handleAppendEntriesResponse(msg.getSourceNodeId(), rp);
-                default -> {
-                    // Unknown message or not implemented
-                }
-            }
+        if (!(msg.getPayload() instanceof RaftPayload rp)) {
+            return; // Not a Raft message
+        }
+        switch (rp.getType()) {
+            case REQUEST_VOTE -> handleRequestVote(msg.getSourceNodeId(), rp);
+            case REQUEST_VOTE_RESPONSE -> handleRequestVoteResponse(msg.getSourceNodeId(), rp);
+            case APPEND_ENTRIES -> handleAppendEntries(msg.getSourceNodeId(), rp);
+            case APPEND_ENTRIES_RESPONSE -> handleAppendEntriesResponse(msg.getSourceNodeId(), rp);
+            default -> { /* ignore or log */ }
         }
     }
 
-    // Leader, Follower, or Candidate states
+    // -------------- ELECTIONS --------------
+    public void triggerElection() {
+        // If we’re a follower or an out-of-date leader, start a new election
+        becomeCandidate();
+        requestVotesFromPeers();
+    }
 
-    // ------------------------------
-    // Election Start
-    // ------------------------------
-    private void startElection() {
+    private void becomeCandidate() {
         role = Role.CANDIDATE;
         currentTerm++;
         votedFor = myNodeId;
+        votesReceivedPerTerm.put(currentTerm, 1);
+        System.out.println(myNodeId + " becomes CANDIDATE for term " + currentTerm);
+    }
 
-        // Reset or set votes received for this new term
-        votesReceivedPerTerm.put(currentTerm, 1); // I voted for myself
-
-        System.out.println(myNodeId + " starting election for term " + currentTerm);
-
-        // Send RequestVote to all other nodes
+    private void requestVotesFromPeers() {
+        // In a real system we’d include lastLogIndex/lastLogTerm in the RequestVote
         for (String nodeId : allNodeIds) {
             if (!nodeId.equals(myNodeId)) {
                 RaftPayload voteRequest = new RaftPayload();
@@ -158,34 +149,28 @@ public class Raft implements ConsensusAlgorithm {
                 voteRequest.setCandidateId(myNodeId);
 
                 SimulationMessage sm = new SimulationMessage(
-                        myNodeId,
-                        nodeId,
-                        MessageType.PROPOSAL,   // or define a custom RAFT type if you prefer
-                        voteRequest
+                    myNodeId,
+                    nodeId,
+                    MessageType.PROPOSAL, // or keep it as REQUEST_VOTE 
+                    voteRequest
                 );
                 router.messageSent(sm);
             }
         }
     }
 
-    // ------------------------------
-    // RequestVote RPC
-    // ------------------------------
     private void handleRequestVote(String sourceNode, RaftPayload rp) {
         int term = rp.getTerm();
         String candidateId = rp.getCandidateId();
 
         if (term > currentTerm) {
-            // Found a higher term, so become a follower
             becomeFollower(term);
         }
 
         boolean grantVote = false;
 
-        // Check if we can vote:
+        // Simple logic: if term matches and we haven’t voted yet (or votedFor is them), grant vote
         if (term == currentTerm && (votedFor == null || votedFor.equals(candidateId))) {
-            // For simplicity, ignoring log indices or "up-to-date" checks
-            // We can grant the vote
             grantVote = true;
             votedFor = candidateId;
         }
@@ -196,12 +181,11 @@ public class Raft implements ConsensusAlgorithm {
         response.setTerm(currentTerm);
         response.setVoteGranted(grantVote);
 
-        // Send back
         SimulationMessage sm = new SimulationMessage(
-                myNodeId,
-                sourceNode,
-                MessageType.PROPOSAL,
-                response
+            myNodeId,
+            sourceNode,
+            MessageType.PROPOSAL,
+            response
         );
         router.messageSent(sm);
     }
@@ -210,163 +194,234 @@ public class Raft implements ConsensusAlgorithm {
         int term = rp.getTerm();
         boolean voteGranted = rp.isVoteGranted();
 
-        // If we see a higher term, we revert to follower
         if (term > currentTerm) {
             becomeFollower(term);
             return;
         }
 
-        // If still a candidate, count the vote
+        // If still candidate in this term
         if (role == Role.CANDIDATE && term == currentTerm && voteGranted) {
             int voteCount = votesReceivedPerTerm.getOrDefault(currentTerm, 0);
             voteCount++;
             votesReceivedPerTerm.put(currentTerm, voteCount);
 
             if (voteCount >= (allNodeIds.size() / 2) + 1) {
-                // Achieved majority => become leader
                 becomeLeader();
             }
         }
     }
 
-    // ------------------------------
-    // AppendEntries RPC (heartbeats + log replication)
-    // ------------------------------
-    private void handleAppendEntries(String sourceNode, RaftPayload rp) {
-        int leaderTerm = rp.getTerm();
-
-        // If leaderTerm is higher, we step down
-        if (leaderTerm > currentTerm) {
-            becomeFollower(leaderTerm);
-        }
-
-        // If the leader’s term < our term, we reject
-        if (leaderTerm < currentTerm) {
-            sendAppendEntriesResponse(false, sourceNode);
-            return;
-        }
-
-        // We’re a follower if we see a valid leader
-        if (role != Role.FOLLOWER) {
-            // Step down if we aren’t follower
-            role = Role.FOLLOWER;
-        }
-
-        // “Heartbeat” => success
-        sendAppendEntriesResponse(true, sourceNode);
-    }
-
-    private void handleAppendEntriesResponse(String sourceNode, RaftPayload rp) {
-        // If we are leader, we can track who is “caught up,” etc.
-        // If success, we might advance nextIndex for that follower. 
-        // This skeleton just prints a debug line
-        if (role == Role.LEADER) {
-            boolean success = rp.isSuccess();
-            System.out.println("Leader " + myNodeId + " got AppendEntriesResponse from "
-                    + sourceNode + ": success=" + success);
-        }
-    }
-
-    // ------------------------------
-    // Helper: becomeFollower
-    // ------------------------------
     private void becomeFollower(int newTerm) {
         System.out.println(myNodeId + " becomes FOLLOWER in term " + newTerm);
         role = Role.FOLLOWER;
         currentTerm = newTerm;
-        votedFor = null; // reset
+        votedFor = null;
     }
 
-    // ------------------------------
-    // Helper: becomeLeader
-    // ------------------------------
     private void becomeLeader() {
         role = Role.LEADER;
         System.out.println(myNodeId + " is now LEADER in term " + currentTerm);
 
-        // Immediately send heartbeats (AppendEntries) to all
-        sendHeartbeats();
-    }
-
-    // ------------------------------
-    // Helper: replicateLogEntry
-    // (skeleton for demonstration)
-    // ------------------------------
-    private void replicateLogEntry(Object value) {
-        // In real Raft, we’d add the entry to our local log, then send AppendEntries
-        // with the new entry. Here, we’ll just do a “heartbeat” to indicate a new command.
+        // Initialize nextIndex for each follower to leader’s lastLogIndex + 1
+        int lastLogIndex = log.size() - 1; // could be -1 if no entries
         for (String nodeId : allNodeIds) {
-            if (!nodeId.equals(myNodeId)) {
-                RaftPayload rp = new RaftPayload();
-                rp.setType(MessageType.APPEND_ENTRIES);
-                rp.setTerm(currentTerm);
-                rp.setLeaderId(myNodeId);
-                rp.setEntry(value); // pretend this is the “log entry”
-
-                SimulationMessage sm = new SimulationMessage(
-                        myNodeId,
-                        nodeId,
-                        MessageType.PROPOSAL,
-                        rp
-                );
-                router.messageSent(sm);
-            }
+            nextIndexMap.put(nodeId, lastLogIndex + 1);
+            matchIndexMap.put(nodeId, -1);
         }
-        // We’d then wait for majority “AppendEntriesResponse” success to commit the entry.
-        // For simplicity, let’s call commit immediately (NOT real Raft).
-        commit(value);
+        matchIndexMap.put(myNodeId, lastLogIndex); // leader is always fully caught up
+
+        // Immediately send heartbeats
+        broadcastAppendEntries();
     }
 
-    // ------------------------------
-    // Helper: sendHeartbeats
-    // (Would be on a timer in real Raft)
-    // ------------------------------
-    private void sendHeartbeats() {
-        for (String nodeId : allNodeIds) {
-            if (!nodeId.equals(myNodeId)) {
-                RaftPayload rp = new RaftPayload();
-                rp.setType(MessageType.APPEND_ENTRIES);
-                rp.setTerm(currentTerm);
-                rp.setLeaderId(myNodeId);
+    // -------------- APPEND ENTRIES (Log Replication) --------------
+    private void broadcastAppendEntries() {
+        if (role != Role.LEADER) return;
 
-                SimulationMessage sm = new SimulationMessage(
-                        myNodeId,
-                        nodeId,
-                        MessageType.PROPOSAL,
-                        rp
-                );
-                router.messageSent(sm);
-            }
+        int lastLogIndex = log.size() - 1;
+        for (String follower : allNodeIds) {
+            if (follower.equals(myNodeId)) continue;
+            sendAppendEntriesTo(follower);
         }
     }
 
-    private void sendAppendEntriesResponse(boolean success, String targetNode) {
-        RaftPayload rp = new RaftPayload();
-        rp.setType(MessageType.APPEND_ENTRIES_RESPONSE);
-        rp.setTerm(currentTerm);
-        rp.setSuccess(success);
+    /**
+     * Sends an AppendEntries RPC to a single follower,
+     * including any new entries that the follower is missing.
+     */
+    private void sendAppendEntriesTo(String follower) {
+        int nextIndex = nextIndexMap.getOrDefault(follower, log.size());
+
+        // The follower’s nextIndex points to the *next* entry we want them to have.
+        // So the new entries are from nextIndex onward.
+        List<LogEntry> newEntries = new ArrayList<>();
+        if (nextIndex < log.size()) {
+            newEntries = log.subList(nextIndex, log.size());
+        }
+
+        // prevLogIndex is nextIndex - 1
+        int prevLogIndex = nextIndex - 1;
+        int prevLogTerm = (prevLogIndex >= 0) ? log.get(prevLogIndex).getTerm() : -1;
+
+        RaftPayload payload = new RaftPayload();
+        payload.setType(MessageType.APPEND_ENTRIES);
+        payload.setTerm(currentTerm);
+        payload.setLeaderId(myNodeId);
+        payload.setPrevLogIndex(prevLogIndex);
+        payload.setPrevLogTerm(prevLogTerm);
+        payload.setEntries(newEntries);
+        payload.setLeaderCommit(commitIndex);
 
         SimulationMessage sm = new SimulationMessage(
-                myNodeId,
-                targetNode,
-                MessageType.PROPOSAL,
-                rp
+            myNodeId,
+            follower,
+            MessageType.PROPOSAL,
+            payload
         );
         router.messageSent(sm);
     }
 
-    // ------------------------------
-    // Additional Exposed Methods
-    // for Testing or Manual Triggers
-    // ------------------------------
-    public void triggerElection() {
-        // If we’re a follower or an out-of-date leader, we might start an election
-        startElection();
+    private void handleAppendEntries(String sourceNode, RaftPayload rp) {
+        int leaderTerm = rp.getTerm();
+
+        // Step down if the leader term is higher
+        if (leaderTerm > currentTerm) {
+            becomeFollower(leaderTerm);
+        }
+        // If the leader’s term < our term, reject
+        if (leaderTerm < currentTerm) {
+            sendAppendEntriesResponse(false, rp.getPrevLogIndex(), -1, sourceNode);
+            return;
+        }
+
+        // We are a follower if we see a valid leader heartbeat
+        if (role != Role.FOLLOWER) {
+            role = Role.FOLLOWER;
+        }
+
+        // 1. Check the log matching property:
+        int prevLogIndex = rp.getPrevLogIndex();
+        int prevLogTerm = rp.getPrevLogTerm();
+
+        if (prevLogIndex >= 0) {
+            if (prevLogIndex >= log.size()) {
+                // We don't even have prevLogIndex in our log
+                sendAppendEntriesResponse(false, log.size(), -1, sourceNode);
+                return;
+            }
+            if (log.get(prevLogIndex).getTerm() != prevLogTerm) {
+                // Term mismatch
+                sendAppendEntriesResponse(false, prevLogIndex, log.get(prevLogIndex).getTerm(), sourceNode);
+                return;
+            }
+        }
+
+        // 2. If valid, append new entries (handle conflicts)
+        List<LogEntry> entries = rp.getEntries();
+        int currentIndex = prevLogIndex + 1;
+
+        for (LogEntry newEntry : entries) {
+            // If there's an existing entry with same index but different term, delete it and all after it
+            if (currentIndex < log.size()) {
+                LogEntry existing = log.get(currentIndex);
+                if (existing.getTerm() != newEntry.getTerm()) {
+                    // Remove everything from currentIndex onward
+                    while (log.size() > currentIndex) {
+                        log.remove(log.size() - 1);
+                    }
+                }
+            }
+            // If we are missing this entry, append
+            if (currentIndex >= log.size()) {
+                log.add(newEntry);
+            }
+            currentIndex++;
+        }
+
+        // 3. Update commitIndex
+        if (rp.getLeaderCommit() > commitIndex) {
+            // commitIndex = min(leaderCommit, index of last new entry)
+            commitIndex = Math.min(rp.getLeaderCommit(), log.size() - 1);
+            applyEntries();
+        }
+
+        // 4. Respond success
+        // matchIndex = index of the last entry we appended
+        int lastAppended = currentIndex - 1;
+        sendAppendEntriesResponse(true, lastAppended, -1, sourceNode);
     }
 
-    public void triggerHeartbeat() {
-        if (role == Role.LEADER) {
-            sendHeartbeats();
+    private void applyEntries() {
+        // Apply all entries up to commitIndex
+        while (lastApplied < commitIndex + 1) {
+            LogEntry entry = log.get(lastApplied);
+            lastApplied++;
+            // "Apply" to local state machine
+            commit(entry.getCommand());
+        }
+    }
+
+    private void sendAppendEntriesResponse(boolean success, int matchIndex, int conflictTerm, String targetNode) {
+        RaftPayload rp = new RaftPayload();
+        rp.setType(MessageType.APPEND_ENTRIES_RESPONSE);
+        rp.setTerm(currentTerm);
+        rp.setSuccess(success);
+        rp.setMatchIndex(matchIndex);
+        rp.setConflictTerm(conflictTerm);
+
+        SimulationMessage sm = new SimulationMessage(
+            myNodeId,
+            targetNode,
+            MessageType.PROPOSAL,
+            rp
+        );
+        router.messageSent(sm);
+    }
+
+    private void handleAppendEntriesResponse(String follower, RaftPayload rp) {
+        // Only the leader cares about these
+        if (role != Role.LEADER) return;
+
+        if (rp.getTerm() > currentTerm) {
+            becomeFollower(rp.getTerm());
+            return;
+        }
+
+        boolean success = rp.isSuccess();
+        if (!success) {
+            // Decrement nextIndex for that follower and retry
+            int conflictTerm = rp.getConflictTerm();
+            int fallbackIndex = rp.getMatchIndex(); // or log.size()
+            // Simplified approach: just decrement nextIndex by 1
+            // Real Raft would do more intelligent searching for conflictTerm
+            int oldNext = nextIndexMap.get(follower);
+            int newNext = Math.min(oldNext - 1, fallbackIndex);
+            newNext = Math.max(newNext, 0);
+            nextIndexMap.put(follower, newNext);
+            sendAppendEntriesTo(follower);
+        } else {
+            // success = true, update matchIndex and nextIndex
+            int matchIndex = rp.getMatchIndex();
+            matchIndexMap.put(follower, matchIndex);
+            nextIndexMap.put(follower, matchIndex + 1);
+
+            // Check if we can advance commitIndex
+            // For each i in [lastKnownLog..0], if i is “replicated” on majority, and log[i].term == currentTerm -> commit
+            for (int i = log.size() - 1; i > commitIndex; i--) {
+                int replicatedCount = 1; // counting leader
+                for (String nodeId : allNodeIds) {
+                    int m = matchIndexMap.getOrDefault(nodeId, -1);
+                    if (m >= i) {
+                        replicatedCount++;
+                    }
+                }
+                if (replicatedCount >= (allNodeIds.size() / 2) + 1
+                    && log.get(i).getTerm() == currentTerm) {
+                    commitIndex = i;
+                    applyEntries();
+                    break;
+                }
+            }
         }
     }
 }
