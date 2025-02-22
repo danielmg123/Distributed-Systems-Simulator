@@ -11,10 +11,10 @@ public class Simulation {
 
     @Id
     private String id;
+
     private String name;
     private List<Event> events;
     private SimulationStatus status;
-    // Additional properties...
 
-    // Constructors, getters, and setters...
+    private SimulationConfig config;
 }

@@ -11,7 +11,6 @@ import com.dss.backend.repository.NodeRepository;
 import com.dss.backend.repository.SimulationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,6 +24,9 @@ public class SimulationService {
     @Autowired
     private NodeRepository nodeRepository;
 
+    // Map to hold running simulation engines (keyed by simulation ID)
+    private final Map<String, SimulationEngine> engines = new ConcurrentHashMap<>();
+
     public List<Simulation> getAllSimulations() {
         return simulationRepository.findAll();
     }
@@ -35,43 +37,48 @@ public class SimulationService {
     }
 
     public Simulation saveSimulation(Simulation simulation) {
+        // The Simulation object now includes an embedded SimulationConfig (if provided)
         return simulationRepository.save(simulation);
     }
 
     public void deleteSimulation(String id) {
-        simulationRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + id));
+        simulationRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + id));
         simulationRepository.deleteById(id);
     }
 
-    private final Map<String, SimulationEngine> engines = new ConcurrentHashMap<>();
-    
     public void runSimulation(String simulationId) {
         // 1. Load Simulation from DB
         Simulation simulation = simulationRepository.findById(simulationId)
-            .orElseThrow(() -> new ResourceNotFoundException("Simulation not found"));
-        
-        // 2. Retrieve the list of Node objects (or however you store them).
-        //    For example, if your simulation references a topology or set of node IDs,
-        //    you’ll need to load them from the NodeRepository.
+                .orElseThrow(() -> new ResourceNotFoundException("Simulation not found"));
+
+        // (Optional) Log simulation configuration if provided
+        if (simulation.getConfig() != null) {
+            System.out.println("Running simulation with config: " + simulation.getConfig());
+        } else {
+            System.out.println("No simulation configuration provided.");
+        }
+
+        // 2. Retrieve the list of Node objects.
         List<Node> nodes = nodeRepository.findAll();
-        
-        // 3. Pick or build the algorithm. Right now, Paxos is hard-coded:
+
+        // 3. Build the consensus algorithm instance (hard-coded to Paxos in this example).
         PaxosAlgorithm algorithm = new PaxosAlgorithm(
-            "node0",      // you might assign a real ID for each node
-            getAllNodeIds(nodes),
-            new MessageRouter() // or pass an existing router if needed
+                "node0",                 // For example, a hard-coded node ID (adjust as needed)
+                getAllNodeIds(nodes),
+                new MessageRouter()      // Create a new MessageRouter instance
         );
 
-        // 4. Create and configure SimulationEngine
+        // 4. Create and configure the SimulationEngine.
         SimulationEngine engine = new SimulationEngine();
         engine.initializeNodes(nodes, algorithm);
         engines.put(simulationId, engine);
 
-        // 5. Optionally update simulation status to RUNNING
+        // 5. Update simulation status to RUNNING.
         simulation.setStatus(SimulationStatus.RUNNING);
         simulationRepository.save(simulation);
 
-        // 6. Start the simulation
+        // 6. Start the simulation.
         engine.startSimulation();
     }
 
@@ -92,12 +99,11 @@ public class SimulationService {
             engine.stopSimulation();
             engines.remove(simulationId);
 
-            // Optionally update simulation status
+            // Optionally update simulation status to COMPLETED
             Simulation sim = simulationRepository.findById(simulationId)
-                .orElseThrow(() -> new ResourceNotFoundException("Simulation not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Simulation not found"));
             sim.setStatus(SimulationStatus.COMPLETED);
             simulationRepository.save(sim);
         }
     }
 }
-
