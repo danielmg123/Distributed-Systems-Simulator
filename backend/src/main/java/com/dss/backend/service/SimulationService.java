@@ -1,6 +1,7 @@
 package com.dss.backend.service;
 
-import com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm;
+import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
+import com.dss.backend.algorithm.consensus.ConsensusAlgorithmFactory;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.SimulationEngine;
 import com.dss.backend.exception.ResourceNotFoundException;
@@ -11,6 +12,7 @@ import com.dss.backend.repository.NodeRepository;
 import com.dss.backend.repository.SimulationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,7 +39,7 @@ public class SimulationService {
     }
 
     public Simulation saveSimulation(Simulation simulation) {
-        // The Simulation object now includes an embedded SimulationConfig (if provided)
+        // The Simulation object includes an embedded SimulationConfig (if provided)
         return simulationRepository.save(simulation);
     }
 
@@ -52,22 +54,23 @@ public class SimulationService {
         Simulation simulation = simulationRepository.findById(simulationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Simulation not found"));
 
-        // (Optional) Log simulation configuration if provided
+        // Log simulation configuration if provided
         if (simulation.getConfig() != null) {
             System.out.println("Running simulation with config: " + simulation.getConfig());
         } else {
-            System.out.println("No simulation configuration provided.");
+            System.out.println("No simulation configuration provided; defaulting to Paxos.");
         }
 
         // 2. Retrieve the list of Node objects.
         List<Node> nodes = nodeRepository.findAll();
 
-        // 3. Build the consensus algorithm instance (hard-coded to Paxos in this example).
-        PaxosAlgorithm algorithm = new PaxosAlgorithm(
-                "node0",                 // For example, a hard-coded node ID (adjust as needed)
+        // 3. Use the ConsensusAlgorithmFactory to create an algorithm instance
+        MessageRouter router = new MessageRouter();
+        ConsensusAlgorithm algorithm = ConsensusAlgorithmFactory.createAlgorithm(
+                "node0", // For example, a hard-coded node ID
                 getAllNodeIds(nodes),
-                new MessageRouter()      // Create a new MessageRouter instance
-        );
+                simulation.getConfig(), // Pass the simulation configuration (which includes algorithm type etc...)
+                router);
 
         // 4. Create and configure the SimulationEngine.
         SimulationEngine engine = new SimulationEngine();
