@@ -4,6 +4,7 @@ import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithmFactory;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.SimulationEngine;
+import com.dss.backend.engine.concurrent.TopologyPlacer;
 import com.dss.backend.exception.ResourceNotFoundException;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.Simulation;
@@ -77,13 +78,32 @@ public class SimulationService {
         engine.initializeNodes(nodes, algorithm);
         engines.put(simulationId, engine);
 
-        // 5. Update simulation status to RUNNING.
+        // 5. Optionally, assign network topology if defined in the simulation config.
+        if (simulation.getConfig() != null && simulation.getConfig().getTopologyType() != null) {
+            Map<String, List<String>> neighborMapping = TopologyPlacer.assignNeighbors(
+                    simulation.getConfig().getTopologyType(), nodes);
+            System.out.println("Computed neighbor mapping: " + neighborMapping);
+            // You may want to store this mapping somewhere or pass it to nodes.
+        }
+
+        // 6. Update simulation status to RUNNING.
         simulation.setStatus(SimulationStatus.RUNNING);
         simulationRepository.save(simulation);
 
-        // 6. Start the simulation.
+        // 7. Start the simulation.
         engine.startSimulation();
+
+        // 8. Optionally, start failure simulation based on config settings.
+        if (simulation.getConfig() != null) {
+            double failurePercentage = simulation.getConfig().getFailurePercentage();
+            if (failurePercentage > 0) {
+                // Check failure status every 5 seconds (5000 milliseconds)
+                engine.startFailureSimulation(failurePercentage, 5000);
+                System.out.println("Started failure simulation with " + failurePercentage + "% failure rate.");
+            }
+        }
     }
+
 
     private List<String> getAllNodeIds(List<Node> nodes) {
         return nodes.stream().map(Node::getId).toList();

@@ -82,4 +82,8 @@ public class VirtualNodeThread extends Thread {
     public void recoverNode() {
         node.setStatus(NodeStatus.ACTIVE);
     }
+
+    public String getNodeId() {return node.getId();}
+
+    public NodeStatus getNodeStatus() {return node.getStatus();}
 }
