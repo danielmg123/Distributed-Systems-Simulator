@@ -1,6 +1,7 @@
 package com.dss.backend.engine.concurrent;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MessageRouter {
@@ -20,4 +21,6 @@ public class MessageRouter {
             targetThread.enqueueMessage(message);
         }
     }
+
+    public Set<String> getRegisteredNodeIds() {return nodeThreadMap.keySet();}
 }
