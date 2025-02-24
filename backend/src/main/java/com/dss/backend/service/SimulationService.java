@@ -6,6 +6,7 @@ import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.SimulationEngine;
 import com.dss.backend.engine.concurrent.TopologyPlacer;
 import com.dss.backend.exception.ResourceNotFoundException;
+import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.Simulation;
 import com.dss.backend.model.SimulationStatus;
@@ -128,5 +129,14 @@ public class SimulationService {
             sim.setStatus(SimulationStatus.COMPLETED);
             simulationRepository.save(sim);
         }
+    }
+
+    // Retrieves the metrics snapshot for a given simulation
+    public MetricsSnapshot getSimulationMetrics(String simulationId) {
+        SimulationEngine engine = engines.get(simulationId);
+        if (engine == null) {
+            throw new ResourceNotFoundException("Simulation not found or not running for id: " + simulationId);
+        }
+        return engine.getMetricsSnapshot();
     }
 }

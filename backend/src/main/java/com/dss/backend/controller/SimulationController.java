@@ -1,5 +1,6 @@
 package com.dss.backend.controller;
 
+import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.model.Simulation;
 import com.dss.backend.service.SimulationService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,5 +54,11 @@ public class SimulationController {
     public ResponseEntity<String> stopSimulation(@PathVariable String id) {
         simulationService.stopSimulation(id);
         return ResponseEntity.ok("Simulation stopped for ID: " + id);
+    }
+
+    @GetMapping("/{id}/metrics")
+    public ResponseEntity<MetricsSnapshot> getSimulationMetrics(@PathVariable String id) {
+        MetricsSnapshot snapshot = simulationService.getSimulationMetrics(id);
+        return ResponseEntity.ok(snapshot);
     }
 }

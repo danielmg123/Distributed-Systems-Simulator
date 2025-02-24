@@ -1,6 +1,9 @@
 package com.dss.backend.engine.concurrent;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
+import com.dss.backend.metrics.DefaultMetricsCollector;
+import com.dss.backend.metrics.MetricsSnapshot;
+import com.dss.backend.metrics.PerformanceMetricsCollector;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
 
@@ -18,6 +21,9 @@ public class SimulationEngine {
     private MessageRouter messageRouter;
 
     private volatile boolean running = false;
+
+    // Metrics Collector
+    private final PerformanceMetricsCollector metricsCollector = new DefaultMetricsCollector();
 
     // Scheduler to trigger failure events periodically
     private final ScheduledExecutorService failureScheduler = Executors.newSingleThreadScheduledExecutor();
@@ -97,5 +103,10 @@ public class SimulationEngine {
         if(vThread != null){
             vThread.recoverNode();
         }
+    }
+
+    // Method to get the current metrics snapshot
+    public MetricsSnapshot getMetricsSnapshot() {
+        return metricsCollector.getSnapshot();
     }
 }
