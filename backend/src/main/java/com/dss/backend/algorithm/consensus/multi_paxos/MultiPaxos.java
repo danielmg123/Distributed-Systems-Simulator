@@ -1,5 +1,6 @@
 package com.dss.backend.algorithm.consensus.multi_paxos;
 
+import lombok.Getter;
 import org.springframework.stereotype.Component;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.engine.concurrent.MessageRouter;
@@ -33,7 +34,9 @@ public class MultiPaxos implements ConsensusAlgorithm {
     private int proposalCounter = 0;
 
     // For the prepare phase
+    @Getter
     private boolean preparePhaseCompleted = false;
+    @Getter
     private int currentProposalNumber = 0;
     private int preparePromiseCount = 0;
     private Object proposedValueForPrepare;
@@ -47,6 +50,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
     private int promisedId = -1;
     private int acceptedId = -1;
     private Object acceptedValue = null;
+    @Getter
     private Object committedValue = null;
 
     // --- Setters for dependencies and configuration ---
