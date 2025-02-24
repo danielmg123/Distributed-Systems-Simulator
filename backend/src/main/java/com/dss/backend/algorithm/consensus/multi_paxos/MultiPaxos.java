@@ -8,32 +8,21 @@ import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.algorithm.consensus.paxos.PaxosPayload;
 
-/**
- * This implementation supports:
- *   - A full prepare/promise phase for the first proposal (or when a new leadership term begins)
- *   - A fast path for subsequent proposals once the prepare phase has been completed.
- *   - Quorum-based decision making by counting PROMISE and ACCEPTED responses.
- *
- * NTS:
- *   - Leader election is simulated via an externally set flag (isLeader).
- *   - Non-leader nodes simply respond to prepare/accept requests.
- *   - In a real system, we would forward proposals from non-leaders to the leader.
- */
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
 @Component
 public class MultiPaxos implements ConsensusAlgorithm {
 
-    // Injected or set externally via setters
     private MessageRouter router;
-    private int totalNodes = 1; // Total number of nodes in the simulation
-    private int quorum = 1;     // Computed as (totalNodes/2)+1
+    private int totalNodes = 1;
+    private int quorum = 1;
 
-    // Leader flag (simulate leader election externally)
     private boolean isLeader = false;
-
-    // Global proposal counter (increases monotonically)
     private int proposalCounter = 0;
 
-    // For the prepare phase
+    // Prepare phase variables
     @Getter
     private boolean preparePhaseCompleted = false;
     @Getter
@@ -43,15 +32,19 @@ public class MultiPaxos implements ConsensusAlgorithm {
     private int highestAcceptedId = -1;
     private Object highestAcceptedValue = null;
 
-    // For the accept phase
+    // Accept phase variables
     private int acceptResponseCount = 0;
 
-    // Local state maintained for each node (for when acting as an acceptor)
+    // Node state
     private int promisedId = -1;
     private int acceptedId = -1;
     private Object acceptedValue = null;
     @Getter
     private Object committedValue = null;
+
+    // Timeout handling
+    private long prepareTimeoutMillis = 5000; // 5 seconds
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     // --- Setters for dependencies and configuration ---
 
@@ -90,6 +83,14 @@ public class MultiPaxos implements ConsensusAlgorithm {
                 System.out.println("Leader starting prepare phase with proposal #" + currentProposalNumber +
                         " and proposed value: " + value);
                 broadcastPrepareRequest(currentProposalNumber);
+                // Schedule a timeout task for the prepare phase:
+                scheduler.schedule(() -> {
+                    if (!preparePhaseCompleted) {
+                        System.out.println("Prepare phase timeout for proposal #" + currentProposalNumber);
+                        // Reset the prepare phase (or you could retry the prepare phase)
+                        resetPreparePhase();
+                    }
+                }, prepareTimeoutMillis, TimeUnit.MILLISECONDS);
             } else {
                 // Fast path: prepare phase already done; propose directly.
                 currentProposalNumber = ++proposalCounter;
@@ -100,6 +101,14 @@ public class MultiPaxos implements ConsensusAlgorithm {
         } else {
             System.out.println("Node is not leader. It must forward proposals to the leader.");
         }
+    }
+
+    private void resetPreparePhase() {
+        preparePhaseCompleted = false;
+        preparePromiseCount = 0;
+        highestAcceptedId = -1;
+        highestAcceptedValue = null;
+        System.out.println("Resetting prepare phase for proposal #" + currentProposalNumber);
     }
 
     /**
@@ -172,15 +181,14 @@ public class MultiPaxos implements ConsensusAlgorithm {
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
         payload.setProposedValue(proposedValueForPrepare);
-        // Broadcast to all nodes.
+        // broadcast to all nodes
         for (String nodeId : router.getRegisteredNodeIds()) {
-            SimulationMessage msg = new SimulationMessage(
-                    /*sourceNodeId=*/ "self", // replace with local node ID if available
-                    nodeId,
-                    MessageType.PREPARE_REQUEST,
-                    payload
-            );
-            router.messageSent(msg);
+            try {
+                SimulationMessage msg = new SimulationMessage("self", nodeId, MessageType.PREPARE_REQUEST, payload);
+                router.messageSent(msg);
+            } catch (Exception e) {
+                System.err.println("Error broadcasting PREPARE_REQUEST to " + nodeId + ": " + e.getMessage());
+            }
         }
     }
 
@@ -188,16 +196,15 @@ public class MultiPaxos implements ConsensusAlgorithm {
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
         payload.setProposedValue(value);
-        // Reset accept count for this proposal.
+        // reset accept count for proposal
         acceptResponseCount = 0;
         for (String nodeId : router.getRegisteredNodeIds()) {
-            SimulationMessage msg = new SimulationMessage(
-                    "self",
-                    nodeId,
-                    MessageType.ACCEPT_REQUEST,
-                    payload
-            );
-            router.messageSent(msg);
+            try {
+                SimulationMessage msg = new SimulationMessage("self", nodeId, MessageType.ACCEPT_REQUEST, payload);
+                router.messageSent(msg);
+            } catch (Exception e) {
+                System.err.println("Error broadcasting ACCEPT_REQUEST to " + nodeId + ": " + e.getMessage());
+            }
         }
     }
 
@@ -205,14 +212,14 @@ public class MultiPaxos implements ConsensusAlgorithm {
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
         payload.setProposedValue(value);
+
         for (String nodeId : router.getRegisteredNodeIds()) {
-            SimulationMessage msg = new SimulationMessage(
-                    "self",
-                    nodeId,
-                    MessageType.COMMIT,
-                    payload
-            );
-            router.messageSent(msg);
+            try {
+                SimulationMessage msg = new SimulationMessage("self", nodeId, MessageType.COMMIT, payload);
+                router.messageSent(msg);
+            } catch (Exception e) {
+                System.err.println("Error broadcasting COMMIT to " + nodeId + ": " + e.getMessage());
+            }
         }
     }
 

@@ -33,9 +33,12 @@ public class ConsensusAlgorithmFactory {
             case RAFT:
                 return new Raft(nodeId, allNodeIds, router);
             case MULTI_PAXOS:
-                // Assuming MultiPaxos requires no additional parameters for now.
-                return new MultiPaxos();
-            // Additional cases for other algorithms will be added here.
+                MultiPaxos multiPaxos = new MultiPaxos();
+                multiPaxos.setMessageRouter(router);
+                multiPaxos.setTotalNodes(allNodeIds.size());
+                // First node as leader
+                multiPaxos.setLeader(allNodeIds.get(0).equals(nodeId));
+                return multiPaxos;
             default:
                 throw new IllegalArgumentException("Unsupported consensus algorithm: " + config.getAlgorithmType());
         }
