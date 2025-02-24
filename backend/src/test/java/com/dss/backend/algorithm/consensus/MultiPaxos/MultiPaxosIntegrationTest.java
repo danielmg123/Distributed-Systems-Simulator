@@ -1,5 +1,6 @@
-package com.dss.backend.algorithm.consensus;
+package com.dss.backend.algorithm.consensus.MultiPaxos;
 
+import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.algorithm.consensus.multi_paxos.MultiPaxos;
 import com.dss.backend.algorithm.consensus.paxos.PaxosPayload;
 import com.dss.backend.engine.concurrent.MessageRouter;
