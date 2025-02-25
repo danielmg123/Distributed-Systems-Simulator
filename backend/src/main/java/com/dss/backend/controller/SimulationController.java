@@ -1,6 +1,8 @@
 package com.dss.backend.controller;
 
+import com.dss.backend.dto.EventDTO;
 import com.dss.backend.dto.SimulationDTO;
+import com.dss.backend.mapper.EventMapper;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.mapper.SimulationMapper;
 import com.dss.backend.model.Simulation;
@@ -21,6 +23,9 @@ public class SimulationController {
 
     @Autowired
     private SimulationMapper simulationMapper;
+
+    @Autowired
+    private EventMapper eventMapper;
 
     @GetMapping
     public List<SimulationDTO> getAllSimulations() {
@@ -71,5 +76,14 @@ public class SimulationController {
     public ResponseEntity<MetricsSnapshot> getSimulationMetrics(@PathVariable String id) {
         MetricsSnapshot snapshot = simulationService.getSimulationMetrics(id);
         return ResponseEntity.ok(snapshot);
+    }
+
+    @GetMapping("/{id}/events")
+    public ResponseEntity<List<EventDTO>> getSimulationEvents(@PathVariable String id) {
+        Simulation simulation = simulationService.getSimulationByIdOrThrow(id);
+        List<EventDTO> eventDTOs = simulation.getEvents().stream()
+                .map(eventMapper::eventToEventDTO)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(eventDTOs);
     }
 }

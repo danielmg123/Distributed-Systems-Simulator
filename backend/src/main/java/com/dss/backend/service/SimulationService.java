@@ -9,16 +9,14 @@ import com.dss.backend.engine.concurrent.SimulationEngine;
 import com.dss.backend.engine.concurrent.TopologyPlacer;
 import com.dss.backend.exception.ResourceNotFoundException;
 import com.dss.backend.metrics.MetricsSnapshot;
-import com.dss.backend.model.EventType;
-import com.dss.backend.model.Node;
-import com.dss.backend.model.Simulation;
-import com.dss.backend.model.SimulationStatus;
+import com.dss.backend.model.*;
 import com.dss.backend.repository.NodeRepository;
 import com.dss.backend.repository.SimulationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -60,74 +58,82 @@ public class SimulationService {
     }
 
     public void runSimulation(String simulationId) {
-        // 1. Load Simulation from DB
+        // 1. Retrieve the simulation from the database or throw an exception if not found
         Simulation simulation = simulationRepository.findById(simulationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Simulation not found"));
 
-        // Log simulation configuration if provided
-        if (simulation.getConfig() != null) {
-            System.out.println("Running simulation with config: " + simulation.getConfig());
-        } else {
-            System.out.println("No simulation configuration provided; defaulting to Paxos.");
-        }
-
-        // 2. Retrieve the list of Node objects.
+        // 2. Retrieve the list of nodes that will participate in the simulation
         List<Node> nodes = nodeRepository.findAll();
 
-        // 3. Use the ConsensusAlgorithmFactory to create an algorithm instance
+        // 3. Create a message router for communication between nodes
         MessageRouter router = new MessageRouter();
-        ConsensusAlgorithm algorithm = ConsensusAlgorithmFactory.createAlgorithm(
-                "node0", // For example, a hard-coded node ID
-                getAllNodeIds(nodes),
-                simulation.getConfig(), // Pass the simulation configuration (which includes algorithm type etc...)
-                router);
 
-        // 4. Create and configure the SimulationEngine, injecting WebSocketController
+        // 4. Use the ConsensusAlgorithmFactory to create an instance of the consensus algorithm
+        ConsensusAlgorithm algorithm = ConsensusAlgorithmFactory.createAlgorithm(
+                "node0",  // Example: a hard-coded node ID
+                getAllNodeIds(nodes),  // Pass all node IDs
+                simulation.getConfig(),  // Pass the simulation configuration
+                router  // Inject the message router
+        );
+
+        // 5. Create and configure the SimulationEngine, injecting the WebSocketController
         SimulationEngine engine = new SimulationEngine(simulationWebSocketController);
         engine.initializeNodes(nodes, algorithm);
+
+        // Store the engine in the map of running simulations
         engines.put(simulationId, engine);
 
-        // 5. Optionally, assign network topology if defined in the simulation config
+        // 6. Set up network topology if defined in the simulation config
         if (simulation.getConfig() != null && simulation.getConfig().getTopologyType() != null) {
             Map<String, List<String>> neighborMapping = TopologyPlacer.assignNeighbors(
                     simulation.getConfig().getTopologyType(), nodes);
             System.out.println("Computed neighbor mapping: " + neighborMapping);
         }
 
-        // 6. Update simulation status to RUNNING.
+        // 7. Update the simulation status to RUNNING and save it to the database
         simulation.setStatus(SimulationStatus.RUNNING);
         simulationRepository.save(simulation);
 
-        // 7. Start the simulation.
+        // 8. Start the simulation engine
         engine.startSimulation(simulationId);
 
-        // 8. Start sending real-time updates (metrics & events) via WebSocket
+        // 9. Start sending real-time updates (metrics & events) via WebSocket
         engine.startMetricsUpdates(simulationId);
 
-        // Send event indicating simulation has started
-        EventDTO startEvent = new EventDTO();
+        // 10. Log and broadcast an event indicating that the simulation has started
+        Event startEvent = new Event();
         startEvent.setType(EventType.SIMULATION_STARTED);
         startEvent.setDetails("Simulation has started.");
         startEvent.setTimestamp(LocalDateTime.now());
-        simulationWebSocketController.sendEventUpdate(simulationId, startEvent);
 
-        // 9. Optionally, start failure simulation based on config settings
+        // Send WebSocket event update
+        simulationWebSocketController.sendEventUpdate(simulationId, mapEventToDTO(startEvent));
+
+        // Persist the event in MongoDB
+        logEvent(simulationId, startEvent);
+
+        // 11. Optionally, start failure simulation if configured
         if (simulation.getConfig() != null) {
             double failurePercentage = simulation.getConfig().getFailurePercentage();
             if (failurePercentage > 0) {
+                // Start failure simulation with the given failure rate
                 engine.startFailureSimulation(simulationId, failurePercentage, 5000);
                 System.out.println("Started failure simulation with " + failurePercentage + "% failure rate.");
 
-                // Send event to notify clients that failure simulation has started
-                EventDTO failureEvent = new EventDTO();
+                // 12. Log and broadcast an event indicating failure simulation has started
+                Event failureEvent = new Event();
                 failureEvent.setType(EventType.FAILURE_SIMULATION_STARTED);
                 failureEvent.setDetails("Failure simulation started with " + failurePercentage + "% failure rate.");
                 failureEvent.setTimestamp(LocalDateTime.now());
-                simulationWebSocketController.sendEventUpdate(simulationId, failureEvent);
+
+                // Send WebSocket event update
+                simulationWebSocketController.sendEventUpdate(simulationId, mapEventToDTO(failureEvent));
+
+                // Persist the event in MongoDB
+                logEvent(simulationId, failureEvent);
             }
         }
     }
-
 
     private List<String> getAllNodeIds(List<Node> nodes) {
         return nodes.stream().map(Node::getId).toList();
@@ -139,6 +145,24 @@ public class SimulationService {
             engine.failNode(simulationId, nodeId);
         }
     }
+
+    public void logEvent(String simulationId, Event event) {
+        Simulation simulation = getSimulationByIdOrThrow(simulationId);
+        if (simulation.getEvents() == null) {
+            simulation.setEvents(new ArrayList<>());
+        }
+        simulation.getEvents().add(event);
+        simulationRepository.save(simulation);
+    }
+
+    private EventDTO mapEventToDTO(Event event) {
+        EventDTO dto = new EventDTO();
+        dto.setType(event.getType());
+        dto.setDetails(event.getDetails());
+        dto.setTimestamp(event.getTimestamp());
+        return dto;
+    }
+
 
     public void stopSimulation(String simulationId) {
         SimulationEngine engine = engines.get(simulationId);
