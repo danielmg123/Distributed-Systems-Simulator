@@ -1,12 +1,16 @@
 package com.dss.backend.engine.concurrent;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
+import com.dss.backend.controller.SimulationWebSocketController;
+import com.dss.backend.dto.EventDTO;
 import com.dss.backend.metrics.DefaultMetricsCollector;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.metrics.PerformanceMetricsCollector;
+import com.dss.backend.model.EventType;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -16,71 +20,132 @@ public class SimulationEngine {
 
     // A map of nodeId -> VirtualNodeThread
     private Map<String, VirtualNodeThread> nodeThreads = new ConcurrentHashMap<>();
-
-    // Message router for inter-node communication
     private MessageRouter messageRouter;
-
     private volatile boolean running = false;
 
     // Metrics Collector
     private final PerformanceMetricsCollector metricsCollector = new DefaultMetricsCollector();
 
-    // Scheduler to trigger failure events periodically
+    // WebSocket Controller for real-time updates
+    private final SimulationWebSocketController simulationWebSocketController;
+
+    // Scheduler for failure simulation and periodic metrics updates
     private final ScheduledExecutorService failureScheduler = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService metricsScheduler = Executors.newSingleThreadScheduledExecutor();
     private final Random random = new Random();
 
-    public SimulationEngine(){
+    /**
+     * Constructor for SimulationEngine.
+     *
+     * @param simulationWebSocketController WebSocket controller for real-time updates
+     */
+    public SimulationEngine(SimulationWebSocketController simulationWebSocketController) {
         this.messageRouter = new MessageRouter();
+        this.simulationWebSocketController = simulationWebSocketController;
     }
 
-    public void initializeNodes(List<Node> nodes, ConsensusAlgorithm algorithm){
-        for(Node node : nodes){
+    /**
+     * Initializes nodes for the simulation.
+     *
+     * @param nodes     List of nodes participating in the simulation.
+     * @param algorithm Consensus algorithm instance to use.
+     */
+    public void initializeNodes(List<Node> nodes, ConsensusAlgorithm algorithm) {
+        for (Node node : nodes) {
             VirtualNodeThread vThread = new VirtualNodeThread(node, algorithm, messageRouter);
             messageRouter.registerNode(node.getId(), vThread);
             nodeThreads.put(node.getId(), vThread);
         }
     }
 
-    public void startSimulation(){
+    /**
+     * Starts the simulation by running node threads.
+     */
+    public void startSimulation(String simulationId) {
         running = true;
 
-        // Optionally, compute and log neighbor mapping based on topology.
-        // (For example, if the SimulationConfig and NetworkTopology are provided elsewhere.)
-
-        // Start each node thread.
-        for(VirtualNodeThread vThread : nodeThreads.values()){
+        // Start each node thread
+        for (VirtualNodeThread vThread : nodeThreads.values()) {
             vThread.start();
         }
+
+        // Start periodic metrics updates
+        startMetricsUpdates(simulationId);
+
+        // Notify clients that simulation has started
+        sendSimulationEvent(simulationId, "Simulation started.");
     }
 
     /**
-     * Starts a periodic task that randomly fails nodes based on the given failurePercentage.
+     * Starts a periodic task to push metrics updates to WebSocket clients.
+     *
+     * @param simulationId The simulation identifier.
+     */
+    public void startMetricsUpdates(String simulationId) {
+        metricsScheduler.scheduleAtFixedRate(() -> {
+            if (running) {
+                MetricsSnapshot snapshot = getMetricsSnapshot();
+                simulationWebSocketController.sendMetricsUpdate(simulationId, snapshot);
+            }
+        }, 0, 5, TimeUnit.SECONDS); // Adjust interval as needed
+    }
+
+    /**
+     * Sends a WebSocket event update.
+     *
+     * @param simulationId Simulation identifier.
+     * @param message      Event message.
+     */
+    public void sendSimulationEvent(String simulationId, String message) {
+        EventDTO event = new EventDTO();
+        event.setType(EventType.SIMULATION_EVENT);
+        event.setDetails(message);
+        event.setTimestamp(LocalDateTime.now());
+
+        simulationWebSocketController.sendEventUpdate(simulationId, event);
+    }
+
+    /**
+     * Starts a periodic task that randomly fails nodes based on a failure percentage.
      *
      * @param failurePercentage The percentage of nodes to fail (e.g., 10 for 10%).
      * @param intervalMillis    How frequently (in milliseconds) to trigger the failure check.
      */
-    public void startFailureSimulation(double failurePercentage, long intervalMillis) {
+    public void startFailureSimulation(String simulationId, double failurePercentage, long intervalMillis) {
         failureScheduler.scheduleAtFixedRate(() -> {
             for (VirtualNodeThread vThread : nodeThreads.values()) {
-                // Only fail nodes that are ACTIVE.
                 if (vThread.getNodeStatus() == NodeStatus.ACTIVE && random.nextDouble() < (failurePercentage / 100.0)) {
-                    System.out.println("Simulating failure for node: " + vThread.getNodeId());
+                    String failedNodeId = vThread.getNodeId();
                     vThread.failNode();
+
+                    // Send failure event update
+                    sendSimulationEvent(simulationId, "Node " + failedNodeId + " has failed.");
                 }
             }
         }, intervalMillis, intervalMillis, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * Stops failure simulation.
+     */
     public void stopFailureSimulation() {
         failureScheduler.shutdownNow();
     }
 
-    public void stopSimulation(){
+    /**
+     * Stops the simulation, stopping all node threads and cleanup.
+     */
+    public void stopSimulation(String simulationId) {
         running = false;
-        for(VirtualNodeThread vThread : nodeThreads.values()){
+
+        // Stop all node threads
+        for (VirtualNodeThread vThread : nodeThreads.values()) {
             vThread.requestStop();
         }
+
         stopFailureSimulation();
+        metricsScheduler.shutdownNow();
+
         for (VirtualNodeThread vThread : nodeThreads.values()) {
             try {
                 vThread.join();
@@ -89,23 +154,48 @@ public class SimulationEngine {
                 System.err.println("Interrupted while stopping simulation.");
             }
         }
+
+        // Notify clients that simulation has stopped
+        sendSimulationEvent(simulationId, "Simulation stopped.");
     }
 
-    public void failNode(String nodeId){
+    /**
+     * Simulates the failure of a specific node.
+     *
+     * @param simulationId Simulation identifier.
+     * @param nodeId       ID of the node to fail.
+     */
+    public void failNode(String simulationId, String nodeId) {
         VirtualNodeThread vThread = nodeThreads.get(nodeId);
-        if(vThread != null){
+        if (vThread != null) {
             vThread.failNode();
+
+            // Send failure event update
+            sendSimulationEvent(simulationId, "Node " + nodeId + " has failed.");
         }
     }
 
-    public void recoverNode(String nodeId){
+    /**
+     * Recovers a previously failed node.
+     *
+     * @param simulationId Simulation identifier.
+     * @param nodeId       ID of the node to recover.
+     */
+    public void recoverNode(String simulationId, String nodeId) {
         VirtualNodeThread vThread = nodeThreads.get(nodeId);
-        if(vThread != null){
+        if (vThread != null) {
             vThread.recoverNode();
+
+            // Send recovery event update
+            sendSimulationEvent(simulationId, "Node " + nodeId + " has recovered.");
         }
     }
 
-    // Method to get the current metrics snapshot
+    /**
+     * Retrieves the current metrics snapshot.
+     *
+     * @return MetricsSnapshot containing simulation performance data.
+     */
     public MetricsSnapshot getMetricsSnapshot() {
         return metricsCollector.getSnapshot();
     }

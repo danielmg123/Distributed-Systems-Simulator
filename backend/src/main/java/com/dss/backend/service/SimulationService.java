@@ -2,11 +2,14 @@ package com.dss.backend.service;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithmFactory;
+import com.dss.backend.controller.SimulationWebSocketController;
+import com.dss.backend.dto.EventDTO;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.SimulationEngine;
 import com.dss.backend.engine.concurrent.TopologyPlacer;
 import com.dss.backend.exception.ResourceNotFoundException;
 import com.dss.backend.metrics.MetricsSnapshot;
+import com.dss.backend.model.EventType;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.Simulation;
 import com.dss.backend.model.SimulationStatus;
@@ -15,6 +18,7 @@ import com.dss.backend.repository.SimulationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +31,10 @@ public class SimulationService {
 
     @Autowired
     private NodeRepository nodeRepository;
+
+    @Autowired
+    private SimulationWebSocketController simulationWebSocketController;
+
 
     // Map to hold running simulation engines (keyed by simulation ID)
     private final Map<String, SimulationEngine> engines = new ConcurrentHashMap<>();
@@ -74,17 +82,16 @@ public class SimulationService {
                 simulation.getConfig(), // Pass the simulation configuration (which includes algorithm type etc...)
                 router);
 
-        // 4. Create and configure the SimulationEngine.
-        SimulationEngine engine = new SimulationEngine();
+        // 4. Create and configure the SimulationEngine, injecting WebSocketController
+        SimulationEngine engine = new SimulationEngine(simulationWebSocketController);
         engine.initializeNodes(nodes, algorithm);
         engines.put(simulationId, engine);
 
-        // 5. Optionally, assign network topology if defined in the simulation config.
+        // 5. Optionally, assign network topology if defined in the simulation config
         if (simulation.getConfig() != null && simulation.getConfig().getTopologyType() != null) {
             Map<String, List<String>> neighborMapping = TopologyPlacer.assignNeighbors(
                     simulation.getConfig().getTopologyType(), nodes);
             System.out.println("Computed neighbor mapping: " + neighborMapping);
-            // You may want to store this mapping somewhere or pass it to nodes.
         }
 
         // 6. Update simulation status to RUNNING.
@@ -92,15 +99,31 @@ public class SimulationService {
         simulationRepository.save(simulation);
 
         // 7. Start the simulation.
-        engine.startSimulation();
+        engine.startSimulation(simulationId);
 
-        // 8. Optionally, start failure simulation based on config settings.
+        // 8. Start sending real-time updates (metrics & events) via WebSocket
+        engine.startMetricsUpdates(simulationId);
+
+        // Send event indicating simulation has started
+        EventDTO startEvent = new EventDTO();
+        startEvent.setType(EventType.SIMULATION_STARTED);
+        startEvent.setDetails("Simulation has started.");
+        startEvent.setTimestamp(LocalDateTime.now());
+        simulationWebSocketController.sendEventUpdate(simulationId, startEvent);
+
+        // 9. Optionally, start failure simulation based on config settings
         if (simulation.getConfig() != null) {
             double failurePercentage = simulation.getConfig().getFailurePercentage();
             if (failurePercentage > 0) {
-                // Check failure status every 5 seconds (5000 milliseconds)
-                engine.startFailureSimulation(failurePercentage, 5000);
+                engine.startFailureSimulation(simulationId, failurePercentage, 5000);
                 System.out.println("Started failure simulation with " + failurePercentage + "% failure rate.");
+
+                // Send event to notify clients that failure simulation has started
+                EventDTO failureEvent = new EventDTO();
+                failureEvent.setType(EventType.FAILURE_SIMULATION_STARTED);
+                failureEvent.setDetails("Failure simulation started with " + failurePercentage + "% failure rate.");
+                failureEvent.setTimestamp(LocalDateTime.now());
+                simulationWebSocketController.sendEventUpdate(simulationId, failureEvent);
             }
         }
     }
@@ -113,14 +136,14 @@ public class SimulationService {
     public void failNode(String simulationId, String nodeId) {
         SimulationEngine engine = engines.get(simulationId);
         if (engine != null) {
-            engine.failNode(nodeId);
+            engine.failNode(simulationId, nodeId);
         }
     }
 
     public void stopSimulation(String simulationId) {
         SimulationEngine engine = engines.get(simulationId);
         if (engine != null) {
-            engine.stopSimulation();
+            engine.stopSimulation(simulationId);
             engines.remove(simulationId);
 
             // Optionally update simulation status to COMPLETED

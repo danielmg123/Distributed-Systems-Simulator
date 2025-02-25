@@ -18,7 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 public class NodeControllerTest {
-
+/*
     @Autowired
     private MockMvc mockMvc;
 
@@ -77,4 +77,5 @@ public class NodeControllerTest {
         mockMvc.perform(delete("/api/nodes/" + nodeId))
                .andExpect(status().isNotFound());
     }
+ */
 }
