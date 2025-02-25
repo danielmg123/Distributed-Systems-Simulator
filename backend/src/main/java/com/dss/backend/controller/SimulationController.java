@@ -1,6 +1,8 @@
 package com.dss.backend.controller;
 
+import com.dss.backend.dto.SimulationDTO;
 import com.dss.backend.metrics.MetricsSnapshot;
+import com.dss.backend.mapper.SimulationMapper;
 import com.dss.backend.model.Simulation;
 import com.dss.backend.service.SimulationService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/simulations")
@@ -16,20 +19,28 @@ public class SimulationController {
     @Autowired
     private SimulationService simulationService;
 
+    @Autowired
+    private SimulationMapper simulationMapper;
+
     @GetMapping
-    public List<Simulation> getAllSimulations() {
-        return simulationService.getAllSimulations();
+    public List<SimulationDTO> getAllSimulations() {
+        List<Simulation> simulations = simulationService.getAllSimulations();
+        return simulations.stream()
+                .map(simulationMapper::simulationToSimulationDTO)
+                .collect(Collectors.toList());
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Simulation> getSimulationById(@PathVariable String id) {
+    public ResponseEntity<SimulationDTO> getSimulationById(@PathVariable String id) {
         Simulation simulation = simulationService.getSimulationByIdOrThrow(id);
-        return ResponseEntity.ok(simulation);
+        return ResponseEntity.ok(simulationMapper.simulationToSimulationDTO(simulation));
     }
 
     @PostMapping
-    public Simulation createSimulation(@RequestBody Simulation simulation) {
-        return simulationService.saveSimulation(simulation);
+    public SimulationDTO createSimulation(@RequestBody SimulationDTO simulationDTO) {
+        Simulation simulation = simulationMapper.simulationDTOToSimulation(simulationDTO);
+        Simulation saved = simulationService.saveSimulation(simulation);
+        return simulationMapper.simulationToSimulationDTO(saved);
     }
 
     @DeleteMapping("/{id}")
