@@ -1,5 +1,6 @@
 package com.dss.backend.algorithm.consensus;
 
+import com.dss.backend.algorithm.consensus.view_stamped_replication.ViewStampedReplication;
 import com.dss.backend.model.ConsensusAlgorithmType;
 import com.dss.backend.model.SimulationConfig;
 import com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm;
@@ -39,6 +40,11 @@ public class ConsensusAlgorithmFactory {
                 // First node as leader
                 multiPaxos.setLeader(allNodeIds.get(0).equals(nodeId));
                 return multiPaxos;
+            case VIEW_STAMPED_REPLICATION:
+                ViewStampedReplication vsr = new ViewStampedReplication();
+                vsr.setMessageRouter(router);
+                // Additional initialization (nodeId, totalNodes, primary flag) should be done after instantiation.
+                return vsr;
             default:
                 throw new IllegalArgumentException("Unsupported consensus algorithm: " + config.getAlgorithmType());
         }

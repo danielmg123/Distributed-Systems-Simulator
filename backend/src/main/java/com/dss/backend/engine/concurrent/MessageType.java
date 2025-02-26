@@ -19,5 +19,9 @@ public enum MessageType {
     REQUEST_VOTE,
     REQUEST_VOTE_RESPONSE,
     APPEND_ENTRIES,
-    APPEND_ENTRIES_RESPONSE
+    APPEND_ENTRIES_RESPONSE,
+
+    // ViewStamped Replication-specific types
+    PREPARE,
+    PREPARE_RESPONSE,
 }
