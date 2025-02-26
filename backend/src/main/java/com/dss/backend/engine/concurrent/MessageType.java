@@ -24,4 +24,7 @@ public enum MessageType {
     // ViewStamped Replication-specific types
     PREPARE,
     PREPARE_RESPONSE,
+
+    // ZooKeeper Atomic Broadcast-specific types
+    ACK
 }
