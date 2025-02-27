@@ -78,7 +78,7 @@ public class SimulationService {
 
         // 5. Create and configure the SimulationEngine, injecting the WebSocketController
         SimulationEngine engine = new SimulationEngine(simulationWebSocketController);
-        engine.initializeNodes(nodes, algorithm);
+        engine.initializeNodes(nodes, algorithm, simulation.getConfig().getTopologyType());
 
         // Store the engine in the map of running simulations
         engines.put(simulationId, engine);
