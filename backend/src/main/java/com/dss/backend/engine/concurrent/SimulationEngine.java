@@ -1,6 +1,8 @@
 package com.dss.backend.engine.concurrent;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
+import com.dss.backend.algorithm.failure.Heartbeat;
+import com.dss.backend.algorithm.failure.RingTopology;
 import com.dss.backend.controller.SimulationWebSocketController;
 import com.dss.backend.dto.EventDTO;
 import com.dss.backend.metrics.DefaultMetricsCollector;
@@ -9,6 +11,7 @@ import com.dss.backend.metrics.PerformanceMetricsCollector;
 import com.dss.backend.model.EventType;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
+import com.dss.backend.model.TopologyType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -22,6 +25,7 @@ public class SimulationEngine {
     private Map<String, VirtualNodeThread> nodeThreads = new ConcurrentHashMap<>();
     private MessageRouter messageRouter;
     private volatile boolean running = false;
+    private RingTopology ringTopology;
 
     // Metrics Collector
     private final PerformanceMetricsCollector metricsCollector = new DefaultMetricsCollector();
@@ -32,6 +36,7 @@ public class SimulationEngine {
     // Scheduler for failure simulation and periodic metrics updates
     private final ScheduledExecutorService failureScheduler = Executors.newSingleThreadScheduledExecutor();
     private final ScheduledExecutorService metricsScheduler = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService ringCheckerScheduler = Executors.newSingleThreadScheduledExecutor();
     private final Random random = new Random();
 
     /**
@@ -49,12 +54,22 @@ public class SimulationEngine {
      *
      * @param nodes     List of nodes participating in the simulation.
      * @param algorithm Consensus algorithm instance to use.
+     * @param topologyType type of topology used
      */
-    public void initializeNodes(List<Node> nodes, ConsensusAlgorithm algorithm) {
+    public void initializeNodes(List<Node> nodes, ConsensusAlgorithm algorithm, TopologyType topologyType) {
         for (Node node : nodes) {
             VirtualNodeThread vThread = new VirtualNodeThread(node, algorithm, messageRouter);
+            Heartbeat heartbeat = new Heartbeat(messageRouter, node.getId());
+            vThread.setHeartbeat(heartbeat);
+            heartbeat.startHeartbeat();
+            vThread.startPhiChecker(); // Start failure detection per node
+
             messageRouter.registerNode(node.getId(), vThread);
             nodeThreads.put(node.getId(), vThread);
+        }
+
+        if (topologyType == TopologyType.RING) {
+            ringTopology = new RingTopology(nodes);
         }
     }
 
@@ -72,6 +87,10 @@ public class SimulationEngine {
         // Start periodic metrics updates
         startMetricsUpdates(simulationId);
 
+        if (ringTopology != null) {
+            startRingFailureChecks();
+        }
+
         // Notify clients that simulation has started
         sendSimulationEvent(simulationId, "Simulation started.");
     }
@@ -88,6 +107,21 @@ public class SimulationEngine {
                 simulationWebSocketController.sendMetricsUpdate(simulationId, snapshot);
             }
         }, 0, 5, TimeUnit.SECONDS); // Adjust interval as needed
+    }
+
+    public void startRingFailureChecks() {
+        ringCheckerScheduler.scheduleAtFixedRate(() -> {
+            for (Node node : ringTopology.getNodes()) {
+                String failedSuccessor = ringTopology.checkSuccessorFailure(node.getId());
+                if (failedSuccessor != null) {
+                    System.out.println("Node " + node.getId() + " detected that its successor " + failedSuccessor + " has failed.");
+                }
+            }
+        }, 0, 1, TimeUnit.SECONDS);
+    }
+
+    public void stopRingFailureChecks() {
+        ringCheckerScheduler.shutdownNow();
     }
 
     /**
@@ -145,6 +179,7 @@ public class SimulationEngine {
 
         stopFailureSimulation();
         metricsScheduler.shutdownNow();
+        stopRingFailureChecks();
 
         for (VirtualNodeThread vThread : nodeThreads.values()) {
             try {

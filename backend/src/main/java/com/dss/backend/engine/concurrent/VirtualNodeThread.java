@@ -1,20 +1,28 @@
 package com.dss.backend.engine.concurrent;
 
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.Map;
+import java.util.concurrent.*;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
+import com.dss.backend.algorithm.failure.Heartbeat;
+import com.dss.backend.algorithm.failure.PhiAccrual;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
+import lombok.Setter;
 
 public class VirtualNodeThread extends Thread {
 
     private final Node node;
     private final ConsensusAlgorithm algorithm;
     private final MessageRouter router;
+    @Setter
+    private Heartbeat heartbeat;
 
-    // inbound message queue for concurrency
     private final BlockingQueue<SimulationMessage> inboundQueue;
+    private final Map<String, PhiAccrual> phiDetectors = new ConcurrentHashMap<>();
+
+    private final ScheduledExecutorService phiChecker = Executors.newSingleThreadScheduledExecutor();
+    private final double phiThreshold = 8.0;
 
     private volatile boolean stopRequested = false;
     
@@ -26,45 +34,44 @@ public class VirtualNodeThread extends Thread {
     }
 
     @Override
-    public void run(){
-       while(!stopRequested){
-            try{
-                // block until a message is avaliable
+    public void run() {
+        while (!stopRequested) {
+            try {
                 SimulationMessage msg = inboundQueue.take();
-                if (node.getStatus() == NodeStatus.FAILED){
-                    // Node is failed, drop or ignore message
-                    continue;
+                // If the message is a HEARTBEAT, update our local failure detector.
+                if (msg.getType() == MessageType.HEARTBEAT && msg.getPayload() instanceof Long) {
+                    long heartbeatTime = (Long) msg.getPayload();
+                    // Update our local PhiAccrual detector for the sender.
+                    // (Assume each node maintains a PhiAccrual instance per neighbor.)
+                    PhiAccrual detector = getOrCreatePhiDetectorFor(msg.getSourceNodeId());
+                    detector.recordHeartbeat(heartbeatTime);
+                } else {
+                    // Normal consensus or other messages:
+                    algorithm.handleMessage(msg);
                 }
-                
-                algorithm.handleMessage(msg);
-                
-            }
-            catch(InterruptedException ex){
+            } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 break;
             }
-       }
+        }
     }
 
-    // private void processMessage(SimulationMessage msg){
-    //     // example: if its a PROPOSAL or ACCEPT message, call the algorithm 
-    //     switch(msg.getType()){
-    //         case PROPOSAL:
-    //             algorithm.propose(msg.getPayload());
-    //             break;
-    //         case ACCEPT:
-    //             algorithm.accept(msg.getPayload());
-    //             break;
-    //         case COMMIT:
-    //             algorithm.commit(msg.getPayload());
-    //             break;
-    //         default:
-    //             break;
-    //     }
+    private PhiAccrual getOrCreatePhiDetectorFor(String neighborId) {
+        return phiDetectors.computeIfAbsent(neighborId, id -> new PhiAccrual());
+    }
 
-    //     // possibly respond or broadcast new messages using router
-    //     // ...
-    // }
+    public void startPhiChecker() {
+        phiChecker.scheduleAtFixedRate(() -> {
+            long now = System.currentTimeMillis();
+            for (Map.Entry<String, PhiAccrual> entry : phiDetectors.entrySet()) {
+                double phi = entry.getValue().computePhi(now);
+                if (phi >= phiThreshold) {
+                    System.out.println("Node " + node.getId() + " suspects neighbor " + entry.getKey() + " has failed (phi=" + phi + ")");
+                }
+            }
+        }, 0, 1, TimeUnit.SECONDS);
+    }
+
 
     public void enqueueMessage(SimulationMessage msg){
         inboundQueue.offer(msg);
