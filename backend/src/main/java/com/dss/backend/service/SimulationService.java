@@ -68,39 +68,31 @@ public class SimulationService {
         // 3. Create a message router for communication between nodes
         MessageRouter router = new MessageRouter();
 
-        // 4. Use the ConsensusAlgorithmFactory to create an instance of the consensus algorithm
-        ConsensusAlgorithm algorithm = ConsensusAlgorithmFactory.createAlgorithm(
-                "node0",  // Example: a hard-coded node ID
-                getAllNodeIds(nodes),  // Pass all node IDs
-                simulation.getConfig(),  // Pass the simulation configuration
-                router  // Inject the message router
-        );
-
-        // 5. Create and configure the SimulationEngine, injecting the WebSocketController
+        // 4. Create and configure the SimulationEngine, injecting the WebSocketController
         SimulationEngine engine = new SimulationEngine(simulationWebSocketController);
-        engine.initializeNodes(nodes, algorithm, simulation.getConfig().getTopologyType());
+        engine.initializeNodes(nodes, simulation.getConfig(), simulation.getConfig().getTopologyType());
 
         // Store the engine in the map of running simulations
         engines.put(simulationId, engine);
 
-        // 6. Set up network topology if defined in the simulation config
+        // 5. Set up network topology if defined in the simulation config
         if (simulation.getConfig() != null && simulation.getConfig().getTopologyType() != null) {
             Map<String, List<String>> neighborMapping = TopologyPlacer.assignNeighbors(
                     simulation.getConfig().getTopologyType(), nodes);
             System.out.println("Computed neighbor mapping: " + neighborMapping);
         }
 
-        // 7. Update the simulation status to RUNNING and save it to the database
+        // 6. Update the simulation status to RUNNING and save it to the database
         simulation.setStatus(SimulationStatus.RUNNING);
         simulationRepository.save(simulation);
 
-        // 8. Start the simulation engine
+        // 7. Start the simulation engine
         engine.startSimulation(simulationId);
 
-        // 9. Start sending real-time updates (metrics & events) via WebSocket
+        // 8. Start sending real-time updates (metrics & events) via WebSocket
         engine.startMetricsUpdates(simulationId);
 
-        // 10. Log and broadcast an event indicating that the simulation has started
+        // 9. Log and broadcast an event indicating that the simulation has started
         Event startEvent = new Event();
         startEvent.setType(EventType.SIMULATION_STARTED);
         startEvent.setDetails("Simulation has started.");
@@ -112,7 +104,7 @@ public class SimulationService {
         // Persist the event in MongoDB
         logEvent(simulationId, startEvent);
 
-        // 11. Optionally, start failure simulation if configured
+        // 10. Optionally, start failure simulation if configured
         if (simulation.getConfig() != null) {
             double failurePercentage = simulation.getConfig().getFailurePercentage();
             if (failurePercentage > 0) {

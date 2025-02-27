@@ -1,6 +1,7 @@
 package com.dss.backend.engine.concurrent;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
+import com.dss.backend.algorithm.consensus.ConsensusAlgorithmFactory;
 import com.dss.backend.algorithm.failure.Heartbeat;
 import com.dss.backend.algorithm.failure.RingTopology;
 import com.dss.backend.controller.SimulationWebSocketController;
@@ -8,16 +9,14 @@ import com.dss.backend.dto.EventDTO;
 import com.dss.backend.metrics.DefaultMetricsCollector;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.metrics.PerformanceMetricsCollector;
-import com.dss.backend.model.EventType;
-import com.dss.backend.model.Node;
-import com.dss.backend.model.NodeStatus;
-import com.dss.backend.model.TopologyType;
+import com.dss.backend.model.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 public class SimulationEngine {
 
@@ -53,21 +52,43 @@ public class SimulationEngine {
      * Initializes nodes for the simulation.
      *
      * @param nodes     List of nodes participating in the simulation.
-     * @param algorithm Consensus algorithm instance to use.
+     * @param config    Simulation configurations
      * @param topologyType type of topology used
      */
-    public void initializeNodes(List<Node> nodes, ConsensusAlgorithm algorithm, TopologyType topologyType) {
+
+    public void initializeNodes(List<Node> nodes, SimulationConfig config, TopologyType topologyType) {
+        // Get the list of all node IDs from the nodes list.
+        List<String> allNodeIds = nodes.stream()
+                .map(Node::getId)
+                .collect(Collectors.toList());
+
+        // For each node, create its own consensus algorithm instance using its unique id.
         for (Node node : nodes) {
-            VirtualNodeThread vThread = new VirtualNodeThread(node, algorithm, messageRouter);
-            Heartbeat heartbeat = new Heartbeat(messageRouter, node.getId());
+            String nodeId = node.getId();
+            ConsensusAlgorithm consensus = ConsensusAlgorithmFactory.createAlgorithm(
+                    nodeId,         // Use the node's own id.
+                    allNodeIds,     // List of all node IDs.
+                    config,         // Simulation configuration.
+                    messageRouter   // Shared message router.
+            );
+
+            // Create the VirtualNodeThread for this node with its unique consensus instance.
+            VirtualNodeThread vThread = new VirtualNodeThread(node, consensus, messageRouter);
+
+            // Set up a per‑node heartbeat and failure detector.
+            Heartbeat heartbeat = new Heartbeat(messageRouter, nodeId);
             vThread.setHeartbeat(heartbeat);
             heartbeat.startHeartbeat();
-            vThread.startPhiChecker(); // Start failure detection per node
 
-            messageRouter.registerNode(node.getId(), vThread);
-            nodeThreads.put(node.getId(), vThread);
+            // Start the phi-checker (failure detector) for this node.
+            vThread.startPhiChecker();
+
+            // Register this node with the message router so it can receive messages.
+            messageRouter.registerNode(nodeId, vThread);
+            nodeThreads.put(nodeId, vThread);
         }
 
+        // If a ring topology is used, initialize it.
         if (topologyType == TopologyType.RING) {
             ringTopology = new RingTopology(nodes);
         }
