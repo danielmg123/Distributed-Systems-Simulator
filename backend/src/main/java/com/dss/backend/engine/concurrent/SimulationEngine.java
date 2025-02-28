@@ -32,10 +32,8 @@ public class SimulationEngine {
     // WebSocket Controller for real-time updates
     private final SimulationWebSocketController simulationWebSocketController;
 
-    // Scheduler for failure simulation and periodic metrics updates
-    private final ScheduledExecutorService failureScheduler = Executors.newSingleThreadScheduledExecutor();
-    private final ScheduledExecutorService metricsScheduler = Executors.newSingleThreadScheduledExecutor();
-    private final ScheduledExecutorService ringCheckerScheduler = Executors.newSingleThreadScheduledExecutor();
+    // Centralized scheduler for all simulation tasks and per-node tasks
+    private final ScheduledExecutorService centralScheduler = Executors.newScheduledThreadPool(10);
     private final Random random = new Random();
 
     /**
@@ -75,15 +73,14 @@ public class SimulationEngine {
             // Create the VirtualNodeThread for this node with its unique consensus instance.
             VirtualNodeThread vThread = new VirtualNodeThread(node, consensus, messageRouter);
 
-            // Set up a per‑node heartbeat and failure detector.
+            // Create and start the heartbeat using the central scheduler.
             Heartbeat heartbeat = new Heartbeat(messageRouter, nodeId);
             vThread.setHeartbeat(heartbeat);
-            heartbeat.startHeartbeat();
+            heartbeat.startHeartbeat(centralScheduler);
 
-            // Start the phi-checker (failure detector) for this node.
-            vThread.startPhiChecker();
+            // Start the phi-checker using the central scheduler.
+            vThread.startPhiChecker(centralScheduler);
 
-            // Register this node with the message router so it can receive messages.
             messageRouter.registerNode(nodeId, vThread);
             nodeThreads.put(nodeId, vThread);
         }
@@ -122,27 +119,24 @@ public class SimulationEngine {
      * @param simulationId The simulation identifier.
      */
     public void startMetricsUpdates(String simulationId) {
-        metricsScheduler.scheduleAtFixedRate(() -> {
+        centralScheduler.scheduleAtFixedRate(() -> {
             if (running) {
                 MetricsSnapshot snapshot = getMetricsSnapshot();
                 simulationWebSocketController.sendMetricsUpdate(simulationId, snapshot);
             }
-        }, 0, 5, TimeUnit.SECONDS); // Adjust interval as needed
+        }, 0, 5, TimeUnit.SECONDS);
     }
 
     public void startRingFailureChecks() {
-        ringCheckerScheduler.scheduleAtFixedRate(() -> {
+        centralScheduler.scheduleAtFixedRate(() -> {
             for (Node node : ringTopology.getNodes()) {
                 String failedSuccessor = ringTopology.checkSuccessorFailure(node.getId());
                 if (failedSuccessor != null) {
-                    System.out.println("Node " + node.getId() + " detected that its successor " + failedSuccessor + " has failed.");
+                    System.out.println("Node " + node.getId() + " detected that its successor "
+                            + failedSuccessor + " has failed.");
                 }
             }
         }, 0, 1, TimeUnit.SECONDS);
-    }
-
-    public void stopRingFailureChecks() {
-        ringCheckerScheduler.shutdownNow();
     }
 
     /**
@@ -167,13 +161,11 @@ public class SimulationEngine {
      * @param intervalMillis    How frequently (in milliseconds) to trigger the failure check.
      */
     public void startFailureSimulation(String simulationId, double failurePercentage, long intervalMillis) {
-        failureScheduler.scheduleAtFixedRate(() -> {
+        centralScheduler.scheduleAtFixedRate(() -> {
             for (VirtualNodeThread vThread : nodeThreads.values()) {
                 if (vThread.getNodeStatus() == NodeStatus.ACTIVE && random.nextDouble() < (failurePercentage / 100.0)) {
                     String failedNodeId = vThread.getNodeId();
                     vThread.failNode();
-
-                    // Send failure event update
                     sendSimulationEvent(simulationId, "Node " + failedNodeId + " has failed.");
                 }
             }
@@ -181,37 +173,27 @@ public class SimulationEngine {
     }
 
     /**
-     * Stops failure simulation.
-     */
-    public void stopFailureSimulation() {
-        failureScheduler.shutdownNow();
-    }
-
-    /**
      * Stops the simulation, stopping all node threads and cleanup.
      */
     public void stopSimulation(String simulationId) {
         running = false;
-
-        // Stop all node threads
         for (VirtualNodeThread vThread : nodeThreads.values()) {
             vThread.requestStop();
-        }
-
-        stopFailureSimulation();
-        metricsScheduler.shutdownNow();
-        stopRingFailureChecks();
-
-        for (VirtualNodeThread vThread : nodeThreads.values()) {
-            try {
-                vThread.join();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                System.err.println("Interrupted while stopping simulation.");
+            // Cancel per‑node scheduled tasks.
+            vThread.stopPhiChecker();
+            if (vThread.getHeartbeat() != null) {
+                vThread.getHeartbeat().stopHeartbeat();
             }
         }
-
-        // Notify clients that simulation has stopped
+        // Shut down the central scheduler cleanly.
+        centralScheduler.shutdown();
+        try {
+            if (!centralScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                centralScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            centralScheduler.shutdownNow();
+        }
         sendSimulationEvent(simulationId, "Simulation stopped.");
     }
 
@@ -228,22 +210,6 @@ public class SimulationEngine {
 
             // Send failure event update
             sendSimulationEvent(simulationId, "Node " + nodeId + " has failed.");
-        }
-    }
-
-    /**
-     * Recovers a previously failed node.
-     *
-     * @param simulationId Simulation identifier.
-     * @param nodeId       ID of the node to recover.
-     */
-    public void recoverNode(String simulationId, String nodeId) {
-        VirtualNodeThread vThread = nodeThreads.get(nodeId);
-        if (vThread != null) {
-            vThread.recoverNode();
-
-            // Send recovery event update
-            sendSimulationEvent(simulationId, "Node " + nodeId + " has recovered.");
         }
     }
 

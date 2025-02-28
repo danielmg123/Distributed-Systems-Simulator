@@ -8,6 +8,7 @@ import com.dss.backend.algorithm.failure.Heartbeat;
 import com.dss.backend.algorithm.failure.PhiAccrual;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
+import lombok.Getter;
 import lombok.Setter;
 
 public class VirtualNodeThread extends Thread {
@@ -15,13 +16,14 @@ public class VirtualNodeThread extends Thread {
     private final Node node;
     private final ConsensusAlgorithm algorithm;
     private final MessageRouter router;
+    @Getter
     @Setter
     private Heartbeat heartbeat;
 
     private final BlockingQueue<SimulationMessage> inboundQueue;
     private final Map<String, PhiAccrual> phiDetectors = new ConcurrentHashMap<>();
 
-    private final ScheduledExecutorService phiChecker = Executors.newSingleThreadScheduledExecutor();
+    private ScheduledFuture<?> phiCheckerFuture; // task scheduled on the central scheduler
     private final double phiThreshold = 8.0;
 
     private volatile boolean stopRequested = false;
@@ -60,18 +62,24 @@ public class VirtualNodeThread extends Thread {
         return phiDetectors.computeIfAbsent(neighborId, id -> new PhiAccrual());
     }
 
-    public void startPhiChecker() {
-        phiChecker.scheduleAtFixedRate(() -> {
+    public void startPhiChecker(ScheduledExecutorService scheduler) {
+        phiCheckerFuture = scheduler.scheduleAtFixedRate(() -> {
             long now = System.currentTimeMillis();
             for (Map.Entry<String, PhiAccrual> entry : phiDetectors.entrySet()) {
                 double phi = entry.getValue().computePhi(now);
                 if (phi >= phiThreshold) {
-                    System.out.println("Node " + node.getId() + " suspects neighbor " + entry.getKey() + " has failed (phi=" + phi + ")");
+                    System.out.println("Node " + node.getId() + " suspects neighbor "
+                            + entry.getKey() + " has failed (phi=" + phi + ")");
                 }
             }
         }, 0, 1, TimeUnit.SECONDS);
     }
 
+    public void stopPhiChecker() {
+        if (phiCheckerFuture != null) {
+            phiCheckerFuture.cancel(true);
+        }
+    }
 
     public void enqueueMessage(SimulationMessage msg){
         inboundQueue.offer(msg);
