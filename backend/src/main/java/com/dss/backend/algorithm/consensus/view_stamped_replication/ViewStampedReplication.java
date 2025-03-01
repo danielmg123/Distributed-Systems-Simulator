@@ -5,11 +5,15 @@ import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
 import lombok.Setter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ViewStampedReplication implements ConsensusAlgorithm {
+
+    private static final Logger logger = LoggerFactory.getLogger(ViewStampedReplication.class);
 
     // Current view (for simplicity, starts at 0)
     private int view = 0;
@@ -47,7 +51,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
     @Override
     public void propose(Object value) {
         if (!isPrimary) {
-            System.out.println("Non-primary node " + nodeId + " cannot initiate proposal; forward request to the primary.");
+            logger.info("Non-primary node {} cannot initiate proposal; forward request to the primary.", nodeId);
             return;
         }
         opNum++;
@@ -63,7 +67,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
                 messageRouter.messageSent(msg);
             }
         }
-        System.out.println("Primary " + nodeId + " initiated PREPARE for op #" + opNum + " with value: " + value);
+        logger.info("Primary {} initiated PREPARE for op #{} with value: {}", nodeId, opNum, value);
     }
 
     /**
@@ -80,7 +84,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
     @Override
     public void commit(Object value) {
         committedOpNum++;
-        System.out.println("Node " + nodeId + " commits op #" + committedOpNum + " with value: " + value);
+        logger.info("Node {} commits op #{} with value: {}", nodeId, committedOpNum, value);
     }
 
     /**
@@ -92,7 +96,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
     @Override
     public void handleMessage(SimulationMessage msg) {
         if (!(msg.getPayload() instanceof VsrPayload)) {
-            System.out.println("Node " + nodeId + " received an unsupported payload: " + msg.getPayload());
+            logger.info("Node {} received an unsupported payload: {}", nodeId, msg.getPayload());
             return;
         }
         VsrPayload payload = (VsrPayload) msg.getPayload();
@@ -107,7 +111,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
                 handleCommit(msg.getSourceNodeId(), payload);
                 break;
             default:
-                System.out.println("Node " + nodeId + " received unknown VSR message type: " + payload.getType());
+                logger.info("Node {} received unknown VSR message type: {}", nodeId, payload.getType());
         }
     }
 
@@ -119,18 +123,17 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
      */
     private void handlePrepare(String sourceNodeId, VsrPayload payload) {
         if (payload.getView() != view) {
-            System.out.println("Node " + nodeId + " ignoring PREPARE with mismatched view " + payload.getView());
+            logger.info("Node {} ignoring PREPARE with mismatched view {}", nodeId, payload.getView());
             return;
         }
         int receivedOp = payload.getOpNum();
         Object proposedValue = payload.getProposedValue();
-        System.out.println("Node " + nodeId + " received PREPARE for op #" + receivedOp +
-                " with value: " + proposedValue + " from " + sourceNodeId);
+        logger.info("Node {} received PREPARE for op #{} with value: {} from {}", nodeId, receivedOp, proposedValue, sourceNodeId);
         // Reply with a PREPARE_RESPONSE.
         VsrPayload response = new VsrPayload(MessageType.PREPARE_RESPONSE, view, receivedOp, proposedValue);
         SimulationMessage responseMsg = new SimulationMessage(nodeId, sourceNodeId, null, response);
         messageRouter.messageSent(responseMsg);
-        System.out.println("Node " + nodeId + " sent PREPARE_RESPONSE for op #" + receivedOp + " to " + sourceNodeId);
+        logger.info("Node {} sent PREPARE_RESPONSE for op #{} to {}", nodeId, receivedOp, sourceNodeId);
     }
 
     /**
@@ -139,22 +142,21 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
      */
     private void handlePrepareResponse(String sourceNodeId, VsrPayload payload) {
         if (!isPrimary) {
-            System.out.println("Non-primary node " + nodeId + " received PREPARE_RESPONSE; ignoring.");
+            logger.info("Non-primary node {} received PREPARE_RESPONSE; ignoring.", nodeId);
             return;
         }
         if (payload.getView() != view) {
-            System.out.println("Primary " + nodeId + " ignoring PREPARE_RESPONSE with mismatched view " + payload.getView());
+            logger.info("Primary {} ignoring PREPARE_RESPONSE with mismatched view {}", nodeId, payload.getView());
             return;
         }
         int responseOp = payload.getOpNum();
         if (!pendingOps.containsKey(responseOp)) {
-            System.out.println("Primary " + nodeId + " received PREPARE_RESPONSE for unknown op #" + responseOp);
+            logger.info("Primary {} received PREPARE_RESPONSE for unknown op #{}", nodeId, responseOp);
             return;
         }
         int count = ackCount.get(responseOp) + 1;
         ackCount.put(responseOp, count);
-        System.out.println("Primary " + nodeId + " received PREPARE_RESPONSE for op #" + responseOp +
-                " from " + sourceNodeId + " (ack count = " + count + ")");
+        logger.info("Primary {} received PREPARE_RESPONSE for op #{} from {} (ack count = {})", nodeId, responseOp, sourceNodeId, count);
 
         // Define quorum as ⌊totalNodes/2⌋ + 1.
         int quorum = (totalNodes / 2) + 1;
@@ -182,13 +184,12 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
      */
     private void handleCommit(String sourceNodeId, VsrPayload payload) {
         if (payload.getView() != view) {
-            System.out.println("Node " + nodeId + " ignoring COMMIT with mismatched view " + payload.getView());
+            logger.info("Node {} ignoring COMMIT with mismatched view {}", nodeId, payload.getView());
             return;
         }
         int commitOp = payload.getOpNum();
         if (commitOp <= committedOpNum) {
-            System.out.println("Node " + nodeId + " already committed op #" + committedOpNum +
-                    ", ignoring COMMIT for op #" + commitOp);
+            logger.info("Node {} already committed op #{}, ignoring COMMIT for op #{}", nodeId, committedOpNum, commitOp);
             return;
         }
         Object value = payload.getProposedValue();

@@ -4,6 +4,8 @@ import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -17,6 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Component
 public class Raft implements ConsensusAlgorithm {
+
+    private static final Logger logger = LoggerFactory.getLogger(Raft.class);
 
     // ------------------------------
     // Raft Roles
@@ -79,7 +83,7 @@ public class Raft implements ConsensusAlgorithm {
     public void propose(Object value) {
         // Only the leader accepts new commands
         if (role != Role.LEADER) {
-            System.out.println("Raft Node " + myNodeId + " is not LEADER; ignoring propose() or forwarding to leader.");
+            logger.info("Raft Node {} is not LEADER; ignoring propose() or forwarding to leader.", myNodeId);
             return;
         }
         // Append to local log (term = currentTerm)
@@ -87,8 +91,7 @@ public class Raft implements ConsensusAlgorithm {
         log.add(entry);
         int newEntryIndex = log.size() - 1;
 
-        System.out.println("Leader " + myNodeId + " appended new command at index=" + newEntryIndex
-                           + " for term=" + currentTerm);
+        logger.info("Leader {} appended new command at index={} for term={}", myNodeId, newEntryIndex, currentTerm);
 
         // Update nextIndex/matchIndex for this leader itself
         // In normal Raft, leader always “matchIndex = lastLogIndex” for self
@@ -107,7 +110,7 @@ public class Raft implements ConsensusAlgorithm {
     @Override
     public void commit(Object value) {
         // If we wanted an external callback each time we commit, we could do so here.
-        System.out.println("Raft Node " + myNodeId + " commits: " + value);
+        logger.info("Raft Node {} commits: {}", myNodeId, value);
     }
 
     @Override
@@ -136,7 +139,7 @@ public class Raft implements ConsensusAlgorithm {
         currentTerm++;
         votedFor = myNodeId;
         votesReceivedPerTerm.put(currentTerm, 1);
-        System.out.println(myNodeId + " becomes CANDIDATE for term " + currentTerm);
+        logger.info("{} becomes CANDIDATE for term {}", myNodeId, currentTerm);
     }
 
     private void requestVotesFromPeers() {
@@ -212,7 +215,7 @@ public class Raft implements ConsensusAlgorithm {
     }
 
     private void becomeFollower(int newTerm) {
-        System.out.println(myNodeId + " becomes FOLLOWER in term " + newTerm);
+        logger.info("{} becomes FOLLOWER in term {}", myNodeId, newTerm);
         role = Role.FOLLOWER;
         currentTerm = newTerm;
         votedFor = null;
@@ -220,7 +223,7 @@ public class Raft implements ConsensusAlgorithm {
 
     private void becomeLeader() {
         role = Role.LEADER;
-        System.out.println(myNodeId + " is now LEADER in term " + currentTerm);
+        logger.info("{} is now LEADER in term {}", myNodeId, currentTerm);
 
         // Initialize nextIndex for each follower to leader’s lastLogIndex + 1
         int lastLogIndex = log.size() - 1; // could be -1 if no entries

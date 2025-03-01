@@ -12,6 +12,8 @@ import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.model.*;
 import com.dss.backend.repository.NodeRepository;
 import com.dss.backend.repository.SimulationRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class SimulationService {
+
+    private static final Logger logger = LoggerFactory.getLogger(SimulationService.class);
 
     @Autowired
     private SimulationRepository simulationRepository;
@@ -79,7 +83,7 @@ public class SimulationService {
         if (simulation.getConfig() != null && simulation.getConfig().getTopologyType() != null) {
             Map<String, List<String>> neighborMapping = TopologyPlacer.assignNeighbors(
                     simulation.getConfig().getTopologyType(), nodes);
-            System.out.println("Computed neighbor mapping: " + neighborMapping);
+            logger.info("Computed neighbor mapping: {}", neighborMapping);
         }
 
         // 6. Update the simulation status to RUNNING and save it to the database
@@ -110,7 +114,7 @@ public class SimulationService {
             if (failurePercentage > 0) {
                 // Start failure simulation with the given failure rate
                 engine.startFailureSimulation(simulationId, failurePercentage, 5000);
-                System.out.println("Started failure simulation with " + failurePercentage + "% failure rate.");
+                logger.info("Started failure simulation with {}% failure rate.", failurePercentage);
 
                 // 12. Log and broadcast an event indicating failure simulation has started
                 Event failureEvent = new Event();

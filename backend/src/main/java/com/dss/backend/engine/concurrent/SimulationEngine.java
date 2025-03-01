@@ -10,6 +10,8 @@ import com.dss.backend.metrics.DefaultMetricsCollector;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.metrics.PerformanceMetricsCollector;
 import com.dss.backend.model.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -19,6 +21,8 @@ import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 public class SimulationEngine {
+
+    private static final Logger logger = LoggerFactory.getLogger(SimulationEngine.class);
 
     // A map of nodeId -> VirtualNodeThread
     private Map<String, VirtualNodeThread> nodeThreads = new ConcurrentHashMap<>();
@@ -132,8 +136,7 @@ public class SimulationEngine {
             for (Node node : ringTopology.getNodes()) {
                 String failedSuccessor = ringTopology.checkSuccessorFailure(node.getId());
                 if (failedSuccessor != null) {
-                    System.out.println("Node " + node.getId() + " detected that its successor "
-                            + failedSuccessor + " has failed.");
+                    logger.info("Node {} detected that its successor {} has failed.", node.getId(), failedSuccessor);
                 }
             }
         }, 0, 1, TimeUnit.SECONDS);

@@ -8,6 +8,8 @@ import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.engine.concurrent.MessageType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Paxos implementation that merges information from all PROMISEs:
@@ -16,6 +18,8 @@ import com.dss.backend.engine.concurrent.MessageType;
  *     we adopt that value for Phase 2.
  */
 public class PaxosAlgorithm implements ConsensusAlgorithm {
+
+    private static final Logger logger = LoggerFactory.getLogger(PaxosAlgorithm.class);
 
     // Tracks per-node Paxos status (promisedId, acceptedId, etc.)
     private final PaxosState paxosState;
@@ -71,7 +75,7 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
     public void commit(Object value) {
         // Mark the chosen value in local state
         paxosState.setChosenValue(value);
-        System.out.println("Node " + myNodeId + " has COMMITTED value: " + value);
+        logger.info("Node {} has COMMITTED value: {}", myNodeId, value);
 
         // Optionally broadcast a final "CHOSEN" or "COMMIT" message 
         // so other nodes can learn the result.

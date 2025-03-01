@@ -10,8 +10,12 @@ import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
 import lombok.Getter;
 import lombok.Setter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class VirtualNodeThread extends Thread {
+
+    private static final Logger logger = LoggerFactory.getLogger(VirtualNodeThread.class);
 
     private final Node node;
     private final ConsensusAlgorithm algorithm;
@@ -68,8 +72,7 @@ public class VirtualNodeThread extends Thread {
             for (Map.Entry<String, PhiAccrual> entry : phiDetectors.entrySet()) {
                 double phi = entry.getValue().computePhi(now);
                 if (phi >= phiThreshold) {
-                    System.out.println("Node " + node.getId() + " suspects neighbor "
-                            + entry.getKey() + " has failed (phi=" + phi + ")");
+                    logger.info("Node {} suspects neighbor {} has failed (phi={})", node.getId(), entry.getKey(), phi);
                 }
             }
         }, 0, 1, TimeUnit.SECONDS);
