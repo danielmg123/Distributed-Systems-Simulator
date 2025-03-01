@@ -44,16 +44,20 @@ public class VirtualNodeThread extends Thread {
         while (!stopRequested) {
             try {
                 SimulationMessage msg = inboundQueue.take();
-                // If the message is a HEARTBEAT, update our local failure detector.
-                if (msg.getType() == MessageType.HEARTBEAT && msg.getPayload() instanceof Long) {
-                    long heartbeatTime = (Long) msg.getPayload();
-                    // Update our local PhiAccrual detector for the sender.
-                    // (Assume each node maintains a PhiAccrual instance per neighbor.)
-                    PhiAccrual detector = getOrCreatePhiDetectorFor(msg.getSourceNodeId());
-                    detector.recordHeartbeat(heartbeatTime);
-                } else {
-                    // Normal consensus or other messages:
-                    algorithm.handleMessage(msg);
+                try {
+                    // Process HEARTBEAT messages separately.
+                    if (msg.getType() == MessageType.HEARTBEAT && msg.getPayload() instanceof Long) {
+                        long heartbeatTime = (Long) msg.getPayload();
+                        // Update the PhiAccrual detector for the sender.
+                        PhiAccrual detector = getOrCreatePhiDetectorFor(msg.getSourceNodeId());
+                        detector.recordHeartbeat(heartbeatTime);
+                    } else {
+                        // Process normal consensus or other messages.
+                        algorithm.handleMessage(msg);
+                    }
+                } catch (Exception e) {
+                    // Log any exception thrown during message processing.
+                    logger.error("Error processing message from {}: {}", msg.getSourceNodeId(), e.getMessage(), e);
                 }
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
@@ -61,6 +65,7 @@ public class VirtualNodeThread extends Thread {
             }
         }
     }
+
 
     private PhiAccrual getOrCreatePhiDetectorFor(String neighborId) {
         return phiDetectors.computeIfAbsent(neighborId, id -> new PhiAccrual());
