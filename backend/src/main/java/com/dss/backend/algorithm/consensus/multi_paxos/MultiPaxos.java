@@ -170,7 +170,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
                 onCommit(msg.getSourceNodeId(), payload);
                 break;
             default:
-                logger.info("MultiPaxos: Unhandled message type: {}", type);
+                logger.warn("MultiPaxos: Unhandled message type: {}", type);
                 break;
         }
     }
@@ -187,7 +187,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
                 SimulationMessage msg = new SimulationMessage("self", nodeId, MessageType.PREPARE_REQUEST, payload);
                 router.messageSent(msg);
             } catch (Exception e) {
-                System.err.println("Error broadcasting PREPARE_REQUEST to " + nodeId + ": " + e.getMessage());
+                logger.error("Error broadcasting PREPARE_REQUEST to {}: {}", nodeId, e.getMessage());
             }
         }
     }
@@ -203,7 +203,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
                 SimulationMessage msg = new SimulationMessage("self", nodeId, MessageType.ACCEPT_REQUEST, payload);
                 router.messageSent(msg);
             } catch (Exception e) {
-                System.err.println("Error broadcasting ACCEPT_REQUEST to " + nodeId + ": " + e.getMessage());
+                logger.error("Error broadcasting ACCEPT_REQUEST to {}: {}", nodeId, e.getMessage());
             }
         }
     }
@@ -218,7 +218,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
                 SimulationMessage msg = new SimulationMessage("self", nodeId, MessageType.COMMIT, payload);
                 router.messageSent(msg);
             } catch (Exception e) {
-                System.err.println("Error broadcasting COMMIT to " + nodeId + ": " + e.getMessage());
+                logger.error("Error broadcasting COMMIT to {}: {}", nodeId, e.getMessage());
             }
         }
     }
