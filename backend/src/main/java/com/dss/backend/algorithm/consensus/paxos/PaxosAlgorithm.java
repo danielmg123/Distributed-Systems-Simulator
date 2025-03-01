@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
+import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.engine.concurrent.MessageType;
@@ -33,6 +34,8 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
     // This node's unique ID
     private final String myNodeId;
 
+    private final ConsensusBroadcaster broadcaster;
+
     // Local counter for generating unique proposal numbers
     private final AtomicInteger proposalCounter = new AtomicInteger(0);
 
@@ -50,18 +53,15 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
         this.allNodeIds = allNodeIds;
         this.router = router;
         this.paxosState = new PaxosState(myNodeId);
-
+        this.broadcaster = new ConsensusBroadcaster(router, myNodeId);
         this.majority = (allNodeIds.size() / 2) + 1;
     }
 
     @Override
     public void propose(Object value) {
         int proposalNumber = generateNextProposalNumber();
-
-        // Initialize the data structure for tracking Phase 1 (PROMISE) replies
-        ProposerData data = new ProposerData(value);
-        proposalDataMap.put(proposalNumber, data);
-
+        // Store proposer data...
+        proposalDataMap.put(proposalNumber, new ProposerData(value));
         broadcastPrepareRequest(proposalNumber, value);
     }
 
@@ -111,20 +111,11 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
 
     // ---------------------- Phase 1: Prepare / Promise ----------------------
     private void broadcastPrepareRequest(int proposalNumber, Object originalValue) {
-        // We attach the originalValue in case no acceptor has a prior acceptedValue
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
         payload.setProposedValue(originalValue);
-
-        for (String nodeId : allNodeIds) {
-            SimulationMessage msg = new SimulationMessage(
-                myNodeId,
-                nodeId,
-                MessageType.PREPARE_REQUEST,
-                payload
-            );
-            router.messageSent(msg);
-        }
+        // Broadcast the same message to all nodes
+        broadcaster.broadcast(MessageType.PREPARE_REQUEST, payload);
     }
 
     private void onPrepareRequest(String sourceNode, PaxosPayload payload) {

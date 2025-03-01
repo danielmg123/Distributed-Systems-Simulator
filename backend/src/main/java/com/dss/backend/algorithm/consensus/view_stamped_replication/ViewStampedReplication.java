@@ -1,6 +1,7 @@
 package com.dss.backend.algorithm.consensus.view_stamped_replication;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
+import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
@@ -38,6 +39,13 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
     // Flag indicating whether this node is the primary (leader) for the current view.
     private boolean isPrimary = false;
 
+    private ConsensusBroadcaster broadcaster;
+
+    // In a setter or initialization method, initialize the broadcaster.
+    public void initBroadcaster() {
+        this.broadcaster = new ConsensusBroadcaster(messageRouter, nodeId);
+    }
+
     public void setPrimary(boolean isPrimary) {
         this.isPrimary = isPrimary;
     }
@@ -51,22 +59,15 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
     @Override
     public void propose(Object value) {
         if (!isPrimary) {
-            logger.info("Non-primary node {} cannot initiate proposal; forward request to the primary.", nodeId);
+            logger.info("Non-primary node {} cannot initiate proposal; forward to primary.", nodeId);
             return;
         }
         opNum++;
         pendingOps.put(opNum, value);
-        // Primary counts itself as an acknowledgment.
-        ackCount.put(opNum, 1);
-
+        ackCount.put(opNum, 1); // Count self ack.
         VsrPayload payload = new VsrPayload(MessageType.PREPARE, view, opNum, value);
-        // Broadcast PREPARE message to all other nodes.
-        for (String targetId : messageRouter.getRegisteredNodeIds()) {
-            if (!targetId.equals(nodeId)) {
-                SimulationMessage msg = new SimulationMessage(nodeId, targetId, null, payload);
-                messageRouter.messageSent(msg);
-            }
-        }
+        // Use the broadcaster to send the PREPARE message.
+        broadcaster.broadcast(MessageType.PREPARE, payload);
         logger.info("Primary {} initiated PREPARE for op #{} with value: {}", nodeId, opNum, value);
     }
 
@@ -154,7 +155,8 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
             logger.info("Primary {} received PREPARE_RESPONSE for unknown op #{}", nodeId, responseOp);
             return;
         }
-        int count = ackCount.get(responseOp) + 1;
+
+        int count = ackCount.getOrDefault(responseOp, 0) + 1;
         ackCount.put(responseOp, count);
         logger.info("Primary {} received PREPARE_RESPONSE for op #{} from {} (ack count = {})", nodeId, responseOp, sourceNodeId, count);
 
@@ -164,14 +166,11 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
             Object valueToCommit = pendingOps.get(responseOp);
             // Broadcast COMMIT message to all backups.
             VsrPayload commitPayload = new VsrPayload(MessageType.COMMIT, view, responseOp, valueToCommit);
-            for (String targetId : messageRouter.getRegisteredNodeIds()) {
-                if (!targetId.equals(nodeId)) {
-                    SimulationMessage commitMsg = new SimulationMessage(nodeId, targetId, null, commitPayload);
-                    messageRouter.messageSent(commitMsg);
-                }
-            }
+            broadcaster.broadcast(MessageType.COMMIT, commitPayload);
+
             // Primary commits locally.
             commit(valueToCommit);
+
             // Clean up the pending operation.
             pendingOps.remove(responseOp);
             ackCount.remove(responseOp);

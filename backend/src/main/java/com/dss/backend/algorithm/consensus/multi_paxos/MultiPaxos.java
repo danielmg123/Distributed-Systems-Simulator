@@ -1,5 +1,6 @@
 package com.dss.backend.algorithm.consensus.multi_paxos;
 
+import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
     private static final Logger logger = LoggerFactory.getLogger(MultiPaxos.class);
 
     private MessageRouter router;
+    private ConsensusBroadcaster broadcaster;
     private int totalNodes = 1;
     private int quorum = 1;
 
@@ -54,6 +56,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
 
     public void setMessageRouter(MessageRouter router) {
         this.router = router;
+        this.broadcaster = new ConsensusBroadcaster(router, "self");
     }
 
     public void setTotalNodes(int totalNodes) {
@@ -181,15 +184,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
         payload.setProposedValue(proposedValueForPrepare);
-        // broadcast to all nodes
-        for (String nodeId : router.getRegisteredNodeIds()) {
-            try {
-                SimulationMessage msg = new SimulationMessage("self", nodeId, MessageType.PREPARE_REQUEST, payload);
-                router.messageSent(msg);
-            } catch (Exception e) {
-                logger.error("Error broadcasting PREPARE_REQUEST to {}: {}", nodeId, e.getMessage());
-            }
-        }
+        broadcaster.broadcast(MessageType.PREPARE_REQUEST, payload);
     }
 
     private void broadcastAcceptRequest(int proposalNumber, Object value) {
@@ -198,29 +193,14 @@ public class MultiPaxos implements ConsensusAlgorithm {
         payload.setProposedValue(value);
         // reset accept count for proposal
         acceptResponseCount = 0;
-        for (String nodeId : router.getRegisteredNodeIds()) {
-            try {
-                SimulationMessage msg = new SimulationMessage("self", nodeId, MessageType.ACCEPT_REQUEST, payload);
-                router.messageSent(msg);
-            } catch (Exception e) {
-                logger.error("Error broadcasting ACCEPT_REQUEST to {}: {}", nodeId, e.getMessage());
-            }
-        }
+        broadcaster.broadcast(MessageType.ACCEPT_REQUEST, payload);
     }
 
     private void broadcastCommit(int proposalNumber, Object value) {
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
         payload.setProposedValue(value);
-
-        for (String nodeId : router.getRegisteredNodeIds()) {
-            try {
-                SimulationMessage msg = new SimulationMessage("self", nodeId, MessageType.COMMIT, payload);
-                router.messageSent(msg);
-            } catch (Exception e) {
-                logger.error("Error broadcasting COMMIT to {}: {}", nodeId, e.getMessage());
-            }
-        }
+        broadcaster.broadcast(MessageType.COMMIT, payload);
     }
 
     // --- Message Handlers ---

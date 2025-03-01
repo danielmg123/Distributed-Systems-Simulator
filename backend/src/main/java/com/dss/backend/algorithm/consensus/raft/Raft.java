@@ -1,6 +1,7 @@
 package com.dss.backend.algorithm.consensus.raft;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
+import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
@@ -143,23 +144,15 @@ public class Raft implements ConsensusAlgorithm {
     }
 
     private void requestVotesFromPeers() {
-        // In a real system we’d include lastLogIndex/lastLogTerm in the RequestVote
-        for (String nodeId : allNodeIds) {
-            if (!nodeId.equals(myNodeId)) {
-                RaftPayload voteRequest = new RaftPayload();
-                voteRequest.setType(MessageType.REQUEST_VOTE);
-                voteRequest.setTerm(currentTerm);
-                voteRequest.setCandidateId(myNodeId);
+        // Create the vote request payload once
+        RaftPayload voteRequest = new RaftPayload();
+        voteRequest.setType(MessageType.REQUEST_VOTE);
+        voteRequest.setTerm(currentTerm);
+        voteRequest.setCandidateId(myNodeId);
 
-                SimulationMessage sm = new SimulationMessage(
-                    myNodeId,
-                    nodeId,
-                    MessageType.PROPOSAL, // or keep it as REQUEST_VOTE 
-                    voteRequest
-                );
-                router.messageSent(sm);
-            }
-        }
+        // Use the broadcaster to send to all nodes except self
+        ConsensusBroadcaster broadcaster = new ConsensusBroadcaster(router, myNodeId);
+        broadcaster.broadcast(MessageType.PROPOSAL, voteRequest);
     }
 
     private void handleRequestVote(String sourceNode, RaftPayload rp) {
