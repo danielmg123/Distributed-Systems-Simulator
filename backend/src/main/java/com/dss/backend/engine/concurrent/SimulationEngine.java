@@ -71,7 +71,8 @@ public class SimulationEngine {
                     nodeId,         // Use the node's own id.
                     allNodeIds,     // List of all node IDs.
                     config,         // Simulation configuration.
-                    messageRouter   // Shared message router.
+                    messageRouter,   // Shared message router.
+                    centralScheduler // Inject the central scheduler
             );
 
             // Create the VirtualNodeThread for this node with its unique consensus instance.
@@ -80,7 +81,7 @@ public class SimulationEngine {
             // Create and start the heartbeat using the central scheduler.
             Heartbeat heartbeat = new Heartbeat(messageRouter, nodeId);
             vThread.setHeartbeat(heartbeat);
-            heartbeat.startHeartbeat(centralScheduler);
+            heartbeat.start(centralScheduler);
 
             // Start the phi-checker using the central scheduler.
             vThread.startPhiChecker(centralScheduler);
@@ -185,7 +186,7 @@ public class SimulationEngine {
             // Cancel per‑node scheduled tasks.
             vThread.stopPhiChecker();
             if (vThread.getHeartbeat() != null) {
-                vThread.getHeartbeat().stopHeartbeat();
+                vThread.getHeartbeat().stop();
             }
         }
         // Shut down the central scheduler cleanly.

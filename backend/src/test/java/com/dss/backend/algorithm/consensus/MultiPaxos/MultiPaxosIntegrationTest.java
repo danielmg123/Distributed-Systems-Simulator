@@ -12,6 +12,8 @@ import com.dss.backend.engine.concurrent.VirtualNodeThread;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
 
+import java.util.concurrent.Executors;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class MultiPaxosIntegrationTest {
@@ -21,17 +23,15 @@ public class MultiPaxosIntegrationTest {
 
     @BeforeEach
     public void setUp() {
-        // Create a new MessageRouter instance.
         router = new MessageRouter();
-
-        // Instantiate the leader MultiPaxos instance.
+        // Create a leader instance of MultiPaxos and configure it.
         leader = new MultiPaxos();
         leader.setLeader(true);
-        // Assume we have 3 nodes in our simulated cluster.
         leader.setTotalNodes(3);
         leader.setMessageRouter(router);
-
-        // Register dummy node IDs in the router (simulating a 3-node cluster).
+        // Inject a scheduler for controlling timeouts during tests.
+        leader.setScheduler(Executors.newSingleThreadScheduledExecutor());
+        // Register three dummy nodes in the router.
         router.registerNode("node1", new DummyVirtualNode("node1"));
         router.registerNode("node2", new DummyVirtualNode("node2"));
         router.registerNode("node3", new DummyVirtualNode("node3"));

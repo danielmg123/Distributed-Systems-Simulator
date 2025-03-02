@@ -8,6 +8,7 @@ import com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm;
 import com.dss.backend.algorithm.consensus.raft.Raft;
 import com.dss.backend.algorithm.consensus.multi_paxos.MultiPaxos;
 import com.dss.backend.engine.concurrent.MessageRouter;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.List;
 
 public class ConsensusAlgorithmFactory {
@@ -22,7 +23,8 @@ public class ConsensusAlgorithmFactory {
      * @return An instance of ConsensusAlgorithm.
      */
     public static ConsensusAlgorithm createAlgorithm(String nodeId, List<String> allNodeIds,
-                                                     SimulationConfig config, MessageRouter router) {
+                                                     SimulationConfig config, MessageRouter router,
+                                                     ScheduledExecutorService scheduler) {
         // Default to Paxos if no configuration is provided.
         if (config == null || config.getAlgorithmType() == null) {
             return new PaxosAlgorithm(nodeId, allNodeIds, router);
@@ -38,8 +40,8 @@ public class ConsensusAlgorithmFactory {
                 MultiPaxos multiPaxos = new MultiPaxos();
                 multiPaxos.setMessageRouter(router);
                 multiPaxos.setTotalNodes(allNodeIds.size());
-                // First node as leader
                 multiPaxos.setLeader(allNodeIds.get(0).equals(nodeId));
+                multiPaxos.setScheduler(scheduler); // inject the provided scheduler
                 return multiPaxos;
             case VIEW_STAMPED_REPLICATION:
                 ViewStampedReplication vsr = new ViewStampedReplication();

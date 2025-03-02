@@ -9,7 +9,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class Heartbeat {
+public class Heartbeat implements HeartbeatService{
     private final MessageRouter router;
     private final String nodeId;
     // How often (in ms) to send heartbeats
@@ -22,7 +22,8 @@ public class Heartbeat {
     }
 
     // Schedule heartbeat tasks on the provided central scheduler.
-    public void startHeartbeat(ScheduledExecutorService scheduler) {
+    @Override
+    public void start(ScheduledExecutorService scheduler) {
         heartbeatFuture = scheduler.scheduleAtFixedRate(() -> {
             for (String targetId : router.getRegisteredNodeIds()) {
                 if (!targetId.equals(nodeId)) {
@@ -33,7 +34,8 @@ public class Heartbeat {
         }, 0, heartbeatIntervalMillis, TimeUnit.MILLISECONDS);
     }
 
-    public void stopHeartbeat() {
+    @Override
+    public void stop() {
         if (heartbeatFuture != null) {
             heartbeatFuture.cancel(true);
         }

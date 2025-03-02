@@ -2,6 +2,7 @@ package com.dss.backend.algorithm.consensus.multi_paxos;
 
 import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
 import lombok.Getter;
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -50,7 +51,8 @@ public class MultiPaxos implements ConsensusAlgorithm {
 
     // Timeout handling
     private long prepareTimeoutMillis = 5000; // 5 seconds
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    @Setter
+    private ScheduledExecutorService scheduler;
 
     // --- Setters for dependencies and configuration ---
 
@@ -81,7 +83,6 @@ public class MultiPaxos implements ConsensusAlgorithm {
     public void propose(Object value) {
         if (isLeader) {
             if (!preparePhaseCompleted) {
-                // Begin full prepare phase for this leadership term.
                 currentProposalNumber = ++proposalCounter;
                 proposedValueForPrepare = value;
                 preparePromiseCount = 0;
@@ -89,16 +90,15 @@ public class MultiPaxos implements ConsensusAlgorithm {
                 highestAcceptedValue = null;
                 logger.info("Leader starting prepare phase with proposal #{} and proposed value: {}", currentProposalNumber, value);
                 broadcastPrepareRequest(currentProposalNumber);
+
                 // Schedule a timeout task for the prepare phase:
                 scheduler.schedule(() -> {
                     if (!preparePhaseCompleted) {
                         logger.info("Prepare phase timeout for proposal #{}", currentProposalNumber);
-                        // Reset the prepare phase (or you could retry the prepare phase)
                         resetPreparePhase();
                     }
                 }, prepareTimeoutMillis, TimeUnit.MILLISECONDS);
             } else {
-                // Fast path: prepare phase already done; propose directly.
                 currentProposalNumber = ++proposalCounter;
                 logger.info("Leader fast-path proposing value '{}' with proposal #{}", value, currentProposalNumber);
                 broadcastAcceptRequest(currentProposalNumber, value);

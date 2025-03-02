@@ -3,12 +3,13 @@ package com.dss.backend.algorithm.failure;
 import java.util.LinkedList;
 import java.util.Queue;
 
-public class PhiAccrual {
+public class PhiAccrual implements FailureDetector{
     private final Queue<Long> heartbeatIntervals = new LinkedList<>();
     private long lastHeartbeatTime = 0;
     private final int sampleSize = 100; // maximum number of samples to keep
 
     // Call this method whenever a heartbeat is received (with the current time in ms)
+    @Override
     public void recordHeartbeat(long currentTimeMillis) {
         if (lastHeartbeatTime != 0) {
             long interval = currentTimeMillis - lastHeartbeatTime;
@@ -21,6 +22,7 @@ public class PhiAccrual {
     }
 
     // Compute the phi value based on the exponential distribution of intervals.
+    @Override
     public double computePhi(long currentTimeMillis) {
         if (heartbeatIntervals.isEmpty()) {
             return 0.0;

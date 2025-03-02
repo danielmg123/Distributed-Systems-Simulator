@@ -12,6 +12,8 @@ import com.dss.backend.model.NodeStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.Executors;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 // This test class adds extra tests for MultiPaxos covering non-leader proposals,
@@ -60,6 +62,8 @@ public class MultiPaxosAdditionalTests {
         leader.setLeader(true);
         leader.setTotalNodes(3);
         leader.setMessageRouter(router);
+        // Inject a scheduler for controlling timeouts during tests.
+        leader.setScheduler(Executors.newSingleThreadScheduledExecutor());
         // Register three dummy nodes in the router.
         router.registerNode("node1", new DummyVirtualNode("node1"));
         router.registerNode("node2", new DummyVirtualNode("node2"));
