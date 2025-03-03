@@ -2,13 +2,13 @@ package com.dss.backend.engine.service;
 
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithmFactory;
+import com.dss.backend.algorithm.failure.Heartbeat;
+import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.VirtualNode;
-import com.dss.backend.algorithm.failure.Heartbeat;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.SimulationConfig;
 import com.dss.backend.model.TopologyType;
-
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -19,29 +19,30 @@ public class NodeInitializationService {
     private final MessageRouter messageRouter;
     private final ScheduledExecutorService scheduler;
     private final ConsensusAlgorithmFactory consensusFactory;
+    private final SimulationProperties simulationProperties;
 
-    // A dedicated worker pool for processing messages in VirtualNodes.
+    // Create a worker pool whose size is configurable.
     private final ExecutorService workerPool;
 
-    public NodeInitializationService(MessageRouter messageRouter, ScheduledExecutorService scheduler,
-                                     ConsensusAlgorithmFactory consensusFactory) {
+    public NodeInitializationService(MessageRouter messageRouter,
+                                     ScheduledExecutorService scheduler,
+                                     ConsensusAlgorithmFactory consensusFactory,
+                                     SimulationProperties simulationProperties) {
         this.messageRouter = messageRouter;
         this.scheduler = scheduler;
         this.consensusFactory = consensusFactory;
-        // Adjust the thread count as needed.
-        this.workerPool = Executors.newFixedThreadPool(10);
+        this.simulationProperties = simulationProperties;
+        this.workerPool = Executors.newFixedThreadPool(simulationProperties.getWorkerThreadPoolSize());
     }
 
     /**
-     * Initializes VirtualNode for each node by creating its consensus instance,
-     * setting up heartbeat and phi-checker, and registering it with the MessageRouter.
-     *
-     * @param nodes        the list of nodes
-     * @param config       the simulation configuration
-     * @param topologyType the type of network topology (used later for neighbor mapping)
-     * @return a Map of node IDs to their VirtualNode
+     * Initializes VirtualNodes for each node by creating its consensus instance,
+     * setting up heartbeat (with externalized interval) and starting the node,
+     * then registering it with the MessageRouter.
      */
-    public Map<String, VirtualNode> initializeNodes(List<Node> nodes, SimulationConfig config, TopologyType topologyType) {
+    public Map<String, VirtualNode> initializeNodes(List<Node> nodes,
+                                                    SimulationConfig config,
+                                                    TopologyType topologyType) {
         Map<String, VirtualNode> nodeMap = new ConcurrentHashMap<>();
         List<String> allNodeIds = nodes.stream()
                 .map(Node::getId)
@@ -49,20 +50,20 @@ public class NodeInitializationService {
 
         for (Node node : nodes) {
             String nodeId = node.getId();
-            // Use the consensusFactory to create the consensus algorithm instance.
+            // Create the consensus algorithm instance using the provided factory.
             ConsensusAlgorithm consensus = consensusFactory.createAlgorithm(nodeId, allNodeIds, config);
-            // Create a VirtualNode with the shared worker pool and scheduler.
+            // Create a VirtualNode using the shared workerPool and scheduler.
             VirtualNode vNode = new VirtualNode(node, consensus, messageRouter, workerPool, scheduler);
 
-            // Setup and start heartbeat.
-            Heartbeat heartbeat = new Heartbeat(messageRouter, nodeId);
+            // Create and start the heartbeat using the externalized heartbeat interval.
+            Heartbeat heartbeat = new Heartbeat(messageRouter, nodeId, simulationProperties.getHeartbeatIntervalMillis());
             vNode.setHeartbeat(heartbeat);
             heartbeat.start(scheduler);
 
-            // Start the VirtualNode processing (schedules its message loop and phi-checker).
+            // Start the VirtualNode (which begins its message loop and phi-checker).
             vNode.start();
 
-            // Register the node with the MessageRouter.
+            // Register the VirtualNode with the MessageRouter.
             messageRouter.registerNode(nodeId, vNode);
             nodeMap.put(nodeId, vNode);
         }

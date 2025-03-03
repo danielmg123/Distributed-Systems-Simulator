@@ -3,8 +3,8 @@ package com.dss.backend.algorithm.consensus.MultiPaxos;
 import com.dss.backend.algorithm.consensus.multi_paxos.MultiPaxos;
 import com.dss.backend.algorithm.consensus.paxos.PaxosPayload;
 import com.dss.backend.engine.concurrent.MessageRouter;
-import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.engine.concurrent.MessageType;
+import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.engine.concurrent.VirtualNode;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
@@ -26,6 +26,8 @@ public class MultiPaxosIntegrationTest {
         // Create a leader instance of MultiPaxos.
         leader = new MultiPaxos();
         leader.setLeader(true);
+        // Set the prepare timeout to 10 seconds for testing.
+        leader.setPrepareTimeoutMillis(10000);
         leader.setTotalNodes(3);
         leader.setMessageRouter(router);
         leader.setScheduler(Executors.newSingleThreadScheduledExecutor());
@@ -36,7 +38,7 @@ public class MultiPaxosIntegrationTest {
     }
 
     @Test
-    public void testFullPrepareAndAcceptFlow() {
+    public void testFullPrepareAndAcceptFlow() throws InterruptedException {
         String proposedValue = "testValue";
         leader.propose(proposedValue);
 
@@ -45,28 +47,38 @@ public class MultiPaxosIntegrationTest {
         promisePayload.setAcceptedId(-1);
         promisePayload.setAcceptedValue(null);
 
+        // Simulate receiving PROMISE messages from node1 and node2.
         leader.handleMessage(new SimulationMessage("node1", "self", MessageType.PROMISE, promisePayload));
         leader.handleMessage(new SimulationMessage("node2", "self", MessageType.PROMISE, promisePayload));
 
-        assertTrue(leader.isPreparePhaseCompleted(), "Prepare phase should be completed after quorum is reached.");
+        // Wait until the prepare phase is completed
+        boolean prepareCompleted = false;
+        for (int i = 0; i < 50; i++) {
+            if (leader.isPreparePhaseCompleted()) {
+                prepareCompleted = true;
+                break;
+            }
+            Thread.sleep(100);
+        }
+        assertTrue(prepareCompleted, "Prepare phase should be completed after quorum is reached.");
 
         PaxosPayload acceptedPayload = new PaxosPayload();
         acceptedPayload.setProposalNumber(leader.getCurrentProposalNumber());
         acceptedPayload.setProposedValue(proposedValue);
 
+        // Simulate receiving ACCEPTED messages.
         leader.handleMessage(new SimulationMessage("node1", "self", MessageType.ACCEPTED, acceptedPayload));
         leader.handleMessage(new SimulationMessage("node2", "self", MessageType.ACCEPTED, acceptedPayload));
 
         assertEquals(proposedValue, leader.getCommittedValue(), "Committed value should match the proposed value.");
     }
 
-    // DummyVirtualNode for testing. It extends VirtualNode and provides minimal behavior.
-    static class DummyVirtualNode extends VirtualNode {
+    // Dummy implementations for testing
 
+    static class DummyVirtualNode extends VirtualNode {
         public DummyVirtualNode(String nodeId) {
             super(createDummyNode(nodeId), new DummyConsensusAlgorithm(), new MessageRouter(),
                     Executors.newSingleThreadExecutor(), Executors.newSingleThreadScheduledExecutor());
-            // For testing, we can start the VirtualNode immediately.
             this.start();
         }
 
@@ -78,7 +90,6 @@ public class MultiPaxosIntegrationTest {
         }
     }
 
-    // DummyConsensusAlgorithm for testing.
     static class DummyConsensusAlgorithm implements com.dss.backend.algorithm.consensus.ConsensusAlgorithm {
         @Override
         public void propose(Object value) { }

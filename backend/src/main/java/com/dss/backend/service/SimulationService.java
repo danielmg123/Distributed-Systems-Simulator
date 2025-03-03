@@ -19,11 +19,11 @@ import com.dss.backend.algorithm.consensus.ConsensusAlgorithmFactory;
 import com.dss.backend.metrics.DefaultMetricsCollector;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.metrics.PerformanceMetricsCollector;
+import com.dss.backend.config.SimulationProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -43,13 +43,18 @@ public class SimulationService {
     @Autowired
     private SimulationWebSocketController simulationWebSocketController;
 
-    // Shared scheduler for simulation tasks.
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(10);
+    // Use the scheduler bean provided by AppConfig
+    @Autowired
+    private ScheduledExecutorService scheduler;
 
-    // Map of simulation ID to its orchestrator.
+    // Inject simulation properties to pass to child services.
+    @Autowired
+    private SimulationProperties simulationProperties;
+
+    // Map of simulation IDs to their respective orchestrators.
     private final Map<String, SimulationOrchestrator> orchestrators = new ConcurrentHashMap<>();
 
-    // A shared metrics collector used by MetricsUpdateService.
+    // Shared metrics collector instance.
     private final PerformanceMetricsCollector metricsCollector = new DefaultMetricsCollector();
 
     public List<Simulation> getAllSimulations() {
@@ -62,7 +67,6 @@ public class SimulationService {
     }
 
     public Simulation saveSimulation(Simulation simulation) {
-        // The Simulation object includes an embedded SimulationConfig (if provided).
         return simulationRepository.save(simulation);
     }
 
@@ -73,21 +77,19 @@ public class SimulationService {
     }
 
     public void runSimulation(String simulationId) {
-        // 1. Retrieve the simulation from the repository.
+        // 1. Retrieve the simulation.
         Simulation simulation = simulationRepository.findById(simulationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + simulationId));
 
-        // 2. Retrieve all nodes participating in the simulation.
+        // 2. Retrieve all nodes participating.
         List<Node> nodes = nodeRepository.findAll();
 
         // 3. Create a shared MessageRouter.
         MessageRouter router = new MessageRouter();
 
-        // 4. Instantiate the new services.
-        // Create a ConsensusAlgorithmFactory instance with the shared router and scheduler.
+        // 4. Instantiate services using injected scheduler and properties.
         ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(router, scheduler);
-        // Now pass the factory into the NodeInitializationService.
-        NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler, consensusFactory);
+        NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler, consensusFactory, simulationProperties);
         MetricsUpdateService metricsUpdateService = new MetricsUpdateService(metricsCollector, simulationWebSocketController, scheduler);
         EventLoggerService eventLoggerService = new EventLoggerService(simulationWebSocketController);
 
@@ -100,26 +102,26 @@ public class SimulationService {
                 eventLoggerService
         );
 
-        // 6. Use the orchestrator to initialize simulation nodes.
+        // 6. Initialize simulation nodes.
         orchestrator.initializeSimulationNodes(nodes, simulation.getConfig(), simulation.getConfig().getTopologyType());
 
-        // Store the orchestrator for later control.
+        // 7. Store the orchestrator.
         orchestrators.put(simulationId, orchestrator);
 
-        // 7. (Optional) Compute the topology mapping and log it.
+        // 8. Compute and log topology mapping if applicable.
         if (simulation.getConfig() != null && simulation.getConfig().getTopologyType() != null) {
             Map<String, List<String>> neighborMapping = orchestrator.computeTopologyMapping(nodes, simulation.getConfig().getTopologyType());
             logger.info("Computed neighbor mapping: {}", neighborMapping);
         }
 
-        // 8. Update the simulation status to RUNNING and persist.
+        // 9. Update simulation status to RUNNING.
         simulation.setStatus(SimulationStatus.RUNNING);
         simulationRepository.save(simulation);
 
-        // 9. Start the simulation orchestration.
+        // 10. Start simulation orchestration.
         orchestrator.startSimulation(simulationId);
 
-        // 10. Log and broadcast a "simulation started" event.
+        // 11. Log and broadcast a "simulation started" event.
         Event startEvent = new Event();
         startEvent.setType(EventType.SIMULATION_STARTED);
         startEvent.setDetails("Simulation has started.");
@@ -127,10 +129,11 @@ public class SimulationService {
         simulationWebSocketController.sendEventUpdate(simulationId, eventLoggerService.mapEventToDTO(startEvent));
         eventLoggerService.logEvent(simulationId, startEvent.getDetails(), startEvent.getType());
 
-        // 11. If configured, start failure simulation.
+        // 12. Optionally, if a failure percentage is specified, start failure simulation.
         if (simulation.getConfig() != null) {
             double failurePercentage = simulation.getConfig().getFailurePercentage();
             if (failurePercentage > 0) {
+                // Here we use a fixed interval (5000 ms) but this could be externalized as well.
                 orchestrator.startFailureSimulation(simulationId, failurePercentage, 5000);
                 logger.info("Started failure simulation with {}% failure rate.", failurePercentage);
 

@@ -1,16 +1,19 @@
 package com.dss.backend.algorithm.consensus.multi_paxos;
 
 import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
+import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.algorithm.consensus.paxos.PaxosPayload;
+import com.dss.backend.config.SimulationProperties;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -49,10 +52,22 @@ public class MultiPaxos implements ConsensusAlgorithm {
     @Getter
     private Object committedValue = null;
 
-    // Timeout handling
-    private long prepareTimeoutMillis = 5000; // 5 seconds
     @Setter
     private ScheduledExecutorService scheduler;
+
+    // Add a setter to allow overriding the prepare timeout (default is 5000 ms)
+    // Timeout handling
+    @Setter
+    private long prepareTimeoutMillis;
+
+    // Inject SimulationProperties to externalize configuration:
+    @Autowired
+    private SimulationProperties simulationProperties;
+
+    @PostConstruct
+    public void init() {
+        this.prepareTimeoutMillis = simulationProperties.getMultipaxosPrepareTimeoutMillis();
+    }
 
     // --- Setters for dependencies and configuration ---
 
@@ -62,9 +77,14 @@ public class MultiPaxos implements ConsensusAlgorithm {
         this.broadcaster = new ConsensusBroadcaster(router, "self");
     }
 
+    // Setter for totalNodes updated to use externalized quorum if set
     public void setTotalNodes(int totalNodes) {
         this.totalNodes = totalNodes;
-        this.quorum = (totalNodes / 2) + 1;
+        if (simulationProperties != null && simulationProperties.getMultipaxosQuorum() > 0) {
+            this.quorum = simulationProperties.getMultipaxosQuorum();
+        } else {
+            this.quorum = (totalNodes / 2) + 1;  // Default to majority quorum
+        }
     }
 
     public void setLeader(boolean isLeader) {
@@ -89,19 +109,19 @@ public class MultiPaxos implements ConsensusAlgorithm {
                 preparePromiseCount = 0;
                 highestAcceptedId = -1;
                 highestAcceptedValue = null;
-                logger.info("Leader starting prepare phase with proposal #{} and proposed value: {}", currentProposalNumber, value);
+                // Log and broadcast the prepare phase start
                 broadcastPrepareRequest(currentProposalNumber);
 
-                // Use the injected scheduler for timeout.
+                // Use the injected scheduler (set via setScheduler) and use the externalized timeout:
                 scheduler.schedule(() -> {
                     if (!preparePhaseCompleted) {
-                        logger.info("Prepare phase timeout for proposal #{}", currentProposalNumber);
+                        // Timeout action
                         resetPreparePhase();
                     }
-                }, prepareTimeoutMillis, TimeUnit.MILLISECONDS);
+                }, prepareTimeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
             } else {
+                // Fast path
                 currentProposalNumber = ++proposalCounter;
-                logger.info("Leader fast-path proposing value '{}' with proposal #{}", value, currentProposalNumber);
                 broadcastAcceptRequest(currentProposalNumber, value);
             }
         } else {

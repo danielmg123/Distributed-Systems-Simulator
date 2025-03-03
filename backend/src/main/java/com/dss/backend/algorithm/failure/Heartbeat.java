@@ -4,21 +4,19 @@ import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.engine.concurrent.MessageType;
 import java.util.concurrent.ScheduledFuture;
-
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class Heartbeat implements HeartbeatService{
+public class Heartbeat implements HeartbeatService {
     private final MessageRouter router;
     private final String nodeId;
-    // How often (in ms) to send heartbeats
-    private final long heartbeatIntervalMillis = 1000;
+    private final long heartbeatIntervalMillis; // now configurable
     private ScheduledFuture<?> heartbeatFuture;
 
-    public Heartbeat(MessageRouter router, String nodeId) {
+    public Heartbeat(MessageRouter router, String nodeId, long heartbeatIntervalMillis) {
         this.router = router;
         this.nodeId = nodeId;
+        this.heartbeatIntervalMillis = heartbeatIntervalMillis;
     }
 
     // Schedule heartbeat tasks on the provided central scheduler.
@@ -36,7 +34,7 @@ public class Heartbeat implements HeartbeatService{
 
     @Override
     public void stop() {
-        if (heartbeatFuture != null) {
+        if (heartbeatFuture != null && !heartbeatFuture.isCancelled()) {
             heartbeatFuture.cancel(true);
         }
     }

@@ -74,7 +74,7 @@ public class SimulationEngine {
             VirtualNode vNode = new VirtualNode(node, consensus, messageRouter, workerPool, centralScheduler);
 
             // Setup and start heartbeat.
-            Heartbeat heartbeat = new Heartbeat(messageRouter, nodeId);
+            Heartbeat heartbeat = new Heartbeat(messageRouter, nodeId, 1000L);
             vNode.setHeartbeat(heartbeat);
             heartbeat.start(centralScheduler);
 
