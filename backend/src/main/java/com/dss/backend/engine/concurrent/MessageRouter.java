@@ -11,25 +11,26 @@ public class MessageRouter {
 
     private static final Logger logger = LoggerFactory.getLogger(MessageRouter.class);
 
-    // nodeId -> VirtualNodeThread
-    private Map<String, VirtualNodeThread> nodeThreadMap = new ConcurrentHashMap<>();
+    // Map of nodeId -> VirtualNode
+    private Map<String, VirtualNode> nodeMap = new ConcurrentHashMap<>();
 
-    public void registerNode(String nodeId, VirtualNodeThread thread){
-        nodeThreadMap.put(nodeId, thread);
+    public void registerNode(String nodeId, VirtualNode node) {
+        nodeMap.put(nodeId, node);
     }
 
     public void messageSent(SimulationMessage message) {
-        // route to the correct VirtualNode
-        VirtualNodeThread targetThread = nodeThreadMap.get(message.getTargetNodeId());
-        if (targetThread != null) {
+        VirtualNode targetNode = nodeMap.get(message.getTargetNodeId());
+        if (targetNode != null) {
             logger.debug("Routing message from {} to {} with type {}",
                     message.getSourceNodeId(), message.getTargetNodeId(), message.getType());
-            targetThread.enqueueMessage(message);
+            targetNode.enqueueMessage(message);
         } else {
             logger.warn("Target node {} not found for message from {}",
                     message.getTargetNodeId(), message.getSourceNodeId());
         }
     }
 
-    public Set<String> getRegisteredNodeIds() {return nodeThreadMap.keySet();}
+    public Set<String> getRegisteredNodeIds() {
+        return nodeMap.keySet();
+    }
 }

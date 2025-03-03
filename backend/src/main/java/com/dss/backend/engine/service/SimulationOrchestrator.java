@@ -1,7 +1,7 @@
 package com.dss.backend.engine.service;
 
 import com.dss.backend.engine.concurrent.MessageRouter;
-import com.dss.backend.engine.concurrent.VirtualNodeThread;
+import com.dss.backend.engine.concurrent.VirtualNode;
 import com.dss.backend.engine.concurrent.TopologyPlacer;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.model.EventType;
@@ -14,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 public class SimulationOrchestrator {
 
@@ -26,7 +25,8 @@ public class SimulationOrchestrator {
     private final MetricsUpdateService metricsUpdateService;
     private final EventLoggerService eventLoggerService;
 
-    private Map<String, VirtualNodeThread> nodeThreads;
+    // Map of nodeId -> VirtualNode
+    private Map<String, VirtualNode> nodeMap;
     private Map<String, List<String>> topologyMapping;
 
     public SimulationOrchestrator(MessageRouter messageRouter,
@@ -45,7 +45,7 @@ public class SimulationOrchestrator {
      * Initializes the simulation nodes and computes the topology (if applicable).
      */
     public void initializeSimulationNodes(List<Node> nodes, SimulationConfig config, TopologyType topologyType) {
-        nodeThreads = nodeInitializationService.initializeNodes(nodes, config, topologyType);
+        nodeMap = nodeInitializationService.initializeNodes(nodes, config, topologyType);
         if (topologyType != null) {
             topologyMapping = TopologyPlacer.assignNeighbors(topologyType, nodes);
             logger.info("Topology mapping: {}", topologyMapping);
@@ -60,70 +60,74 @@ public class SimulationOrchestrator {
     }
 
     /**
-     * Starts the simulation by starting all node threads and periodic metrics updates.
+     * Starts the simulation by starting metrics updates and logging the simulation start.
+     * (VirtualNodes were already started during initialization.)
      */
     public void startSimulation(String simulationId) {
-        if (nodeThreads != null) {
-            for (VirtualNodeThread vThread : nodeThreads.values()) {
-                vThread.start();
-            }
-        }
         metricsUpdateService.startMetricsUpdates(simulationId);
         eventLoggerService.logEvent(simulationId, "Simulation started.", EventType.SIMULATION_STARTED);
     }
 
     /**
-     * Starts failure simulation by scheduling a task that randomly fails active nodes.
+     * Starts a periodic task that randomly fails active nodes based on a given failure percentage.
+     *
+     * @param simulationId     Simulation identifier.
+     * @param failurePercentage Percentage of nodes to fail.
+     * @param intervalMillis   Interval between failure checks.
      */
     public void startFailureSimulation(String simulationId, double failurePercentage, int intervalMillis) {
         scheduler.scheduleAtFixedRate(() -> {
-            for (VirtualNodeThread vThread : nodeThreads.values()) {
-                if (vThread.getNodeStatus().equals(com.dss.backend.model.NodeStatus.ACTIVE)) {
+            for (VirtualNode vNode : nodeMap.values()) {
+                if (vNode.getNodeStatus().equals(com.dss.backend.model.NodeStatus.ACTIVE)) {
                     double rand = Math.random() * 100;
                     if (rand < failurePercentage) {
-                        vThread.failNode();
-                        eventLoggerService.logEvent(simulationId, "Node " + vThread.getNodeId() + " has failed automatically.", EventType.NODE_FAILED);
+                        String failedNodeId = vNode.getNodeId();
+                        vNode.failNode();
+                        eventLoggerService.logEvent(simulationId, "Node " + failedNodeId + " has failed automatically.", EventType.NODE_FAILED);
                     }
                 }
             }
-        }, intervalMillis, intervalMillis, TimeUnit.MILLISECONDS);
+        }, intervalMillis, intervalMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     /**
      * Fails a specific node.
+     *
+     * @param simulationId Simulation identifier.
+     * @param nodeId       ID of the node to fail.
      */
     public void failNode(String simulationId, String nodeId) {
-        VirtualNodeThread vThread = nodeThreads.get(nodeId);
-        if (vThread != null) {
-            vThread.failNode();
+        VirtualNode vNode = nodeMap.get(nodeId);
+        if (vNode != null) {
+            vNode.failNode();
             eventLoggerService.logEvent(simulationId, "Node " + nodeId + " has been failed manually.", EventType.NODE_FAILED);
         }
     }
 
     /**
-     * Returns the current metrics snapshot.
+     * Retrieves the current metrics snapshot.
+     *
+     * @return MetricsSnapshot containing current simulation performance data.
      */
     public MetricsSnapshot getMetricsSnapshot() {
         return metricsUpdateService.getMetricsSnapshot();
     }
 
     /**
-     * Stops the simulation by stopping all node threads and shutting down the scheduler.
+     * Stops the simulation by stopping all VirtualNodes and shutting down the scheduler.
+     *
+     * @param simulationId Simulation identifier.
      */
     public void stopSimulation(String simulationId) {
-        if (nodeThreads != null) {
-            for (VirtualNodeThread vThread : nodeThreads.values()) {
-                vThread.requestStop();
-                vThread.stopPhiChecker();
-                if (vThread.getHeartbeat() != null) {
-                    vThread.getHeartbeat().stop();
-                }
+        if (nodeMap != null) {
+            for (VirtualNode vNode : nodeMap.values()) {
+                vNode.stop();
             }
         }
-        // Note: If you have a dedicated scheduler per simulation, you might not want to shut it down here.
+        // Shut down the scheduler cleanly.
         scheduler.shutdown();
         try {
-            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+            if (!scheduler.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
                 scheduler.shutdownNow();
             }
         } catch (InterruptedException e) {

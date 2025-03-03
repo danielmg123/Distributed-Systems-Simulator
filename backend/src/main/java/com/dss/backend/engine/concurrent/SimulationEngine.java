@@ -24,8 +24,8 @@ public class SimulationEngine {
 
     private static final Logger logger = LoggerFactory.getLogger(SimulationEngine.class);
 
-    // A map of nodeId -> VirtualNodeThread
-    private Map<String, VirtualNodeThread> nodeThreads = new ConcurrentHashMap<>();
+    // Map of nodeId -> VirtualNode
+    private Map<String, VirtualNode> nodeMap = new ConcurrentHashMap<>();
     private MessageRouter messageRouter;
     private volatile boolean running = false;
     private RingTopology ringTopology;
@@ -36,8 +36,10 @@ public class SimulationEngine {
     // WebSocket Controller for real-time updates
     private final SimulationWebSocketController simulationWebSocketController;
 
-    // Centralized scheduler for all simulation tasks and per-node tasks
+    // Centralized scheduler for simulation tasks and per-node tasks
     private final ScheduledExecutorService centralScheduler = Executors.newScheduledThreadPool(10);
+    // Dedicated worker pool for processing VirtualNode messages
+    private final ExecutorService workerPool = Executors.newFixedThreadPool(10);
     private final Random random = new Random();
 
     /**
@@ -53,75 +55,61 @@ public class SimulationEngine {
     /**
      * Initializes nodes for the simulation.
      *
-     * @param nodes     List of nodes participating in the simulation.
-     * @param config    Simulation configurations
-     * @param topologyType type of topology used
+     * @param nodes         List of nodes participating in the simulation.
+     * @param config        Simulation configuration
+     * @param topologyType  Type of topology used
      */
-
     public void initializeNodes(List<Node> nodes, SimulationConfig config, TopologyType topologyType) {
-        // Get the list of all node IDs from the nodes list.
         List<String> allNodeIds = nodes.stream()
                 .map(Node::getId)
                 .collect(Collectors.toList());
 
-        // For each node, create its own consensus algorithm instance using its unique id.
         for (Node node : nodes) {
             String nodeId = node.getId();
             ConsensusAlgorithm consensus = ConsensusAlgorithmFactory.createAlgorithm(
-                    nodeId,         // Use the node's own id.
-                    allNodeIds,     // List of all node IDs.
-                    config,         // Simulation configuration.
-                    messageRouter,   // Shared message router.
-                    centralScheduler // Inject the central scheduler
+                    nodeId,         // local node id
+                    allNodeIds,     // all node ids
+                    config,         // simulation config
+                    messageRouter,  // shared message router
+                    centralScheduler // scheduler for timeouts, etc.
             );
+            // Create VirtualNode with injected workerPool and scheduler.
+            VirtualNode vNode = new VirtualNode(node, consensus, messageRouter, workerPool, centralScheduler);
 
-            // Create the VirtualNodeThread for this node with its unique consensus instance.
-            VirtualNodeThread vThread = new VirtualNodeThread(node, consensus, messageRouter);
-
-            // Create and start the heartbeat using the central scheduler.
+            // Setup and start heartbeat.
             Heartbeat heartbeat = new Heartbeat(messageRouter, nodeId);
-            vThread.setHeartbeat(heartbeat);
+            vNode.setHeartbeat(heartbeat);
             heartbeat.start(centralScheduler);
 
-            // Start the phi-checker using the central scheduler.
-            vThread.startPhiChecker(centralScheduler);
+            // Start the VirtualNode’s internal processing (message loop and phi-checker).
+            vNode.start();
 
-            messageRouter.registerNode(nodeId, vThread);
-            nodeThreads.put(nodeId, vThread);
+            messageRouter.registerNode(nodeId, vNode);
+            nodeMap.put(nodeId, vNode);
         }
 
-        // If a ring topology is used, initialize it.
         if (topologyType == TopologyType.RING) {
             ringTopology = new RingTopology(nodes);
         }
     }
 
     /**
-     * Starts the simulation by running node threads.
+     * Starts the simulation.
      */
     public void startSimulation(String simulationId) {
         running = true;
-
-        // Start each node thread
-        for (VirtualNodeThread vThread : nodeThreads.values()) {
-            vThread.start();
-        }
-
-        // Start periodic metrics updates
+        // Nodes were already started during initialization.
         startMetricsUpdates(simulationId);
 
         if (ringTopology != null) {
             startRingFailureChecks();
         }
 
-        // Notify clients that simulation has started
         sendSimulationEvent(simulationId, "Simulation started.");
     }
 
     /**
-     * Starts a periodic task to push metrics updates to WebSocket clients.
-     *
-     * @param simulationId The simulation identifier.
+     * Schedules periodic metrics updates.
      */
     public void startMetricsUpdates(String simulationId) {
         centralScheduler.scheduleAtFixedRate(() -> {
@@ -144,10 +132,7 @@ public class SimulationEngine {
     }
 
     /**
-     * Sends a WebSocket event update.
-     *
-     * @param simulationId Simulation identifier.
-     * @param message      Event message.
+     * Sends a simulation event via WebSocket.
      */
     public void sendSimulationEvent(String simulationId, String message) {
         EventDTO event = new EventDTO();
@@ -159,17 +144,14 @@ public class SimulationEngine {
     }
 
     /**
-     * Starts a periodic task that randomly fails nodes based on a failure percentage.
-     *
-     * @param failurePercentage The percentage of nodes to fail (e.g., 10 for 10%).
-     * @param intervalMillis    How frequently (in milliseconds) to trigger the failure check.
+     * Starts failure simulation.
      */
     public void startFailureSimulation(String simulationId, double failurePercentage, long intervalMillis) {
         centralScheduler.scheduleAtFixedRate(() -> {
-            for (VirtualNodeThread vThread : nodeThreads.values()) {
-                if (vThread.getNodeStatus() == NodeStatus.ACTIVE && random.nextDouble() < (failurePercentage / 100.0)) {
-                    String failedNodeId = vThread.getNodeId();
-                    vThread.failNode();
+            for (VirtualNode vNode : nodeMap.values()) {
+                if (vNode.getNodeStatus() == NodeStatus.ACTIVE && random.nextDouble() < (failurePercentage / 100.0)) {
+                    String failedNodeId = vNode.getNodeId();
+                    vNode.failNode();
                     sendSimulationEvent(simulationId, "Node " + failedNodeId + " has failed.");
                 }
             }
@@ -177,19 +159,13 @@ public class SimulationEngine {
     }
 
     /**
-     * Stops the simulation, stopping all node threads and cleanup.
+     * Stops the simulation.
      */
     public void stopSimulation(String simulationId) {
         running = false;
-        for (VirtualNodeThread vThread : nodeThreads.values()) {
-            vThread.requestStop();
-            // Cancel per‑node scheduled tasks.
-            vThread.stopPhiChecker();
-            if (vThread.getHeartbeat() != null) {
-                vThread.getHeartbeat().stop();
-            }
+        for (VirtualNode vNode : nodeMap.values()) {
+            vNode.stop();
         }
-        // Shut down the central scheduler cleanly.
         centralScheduler.shutdown();
         try {
             if (!centralScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -202,25 +178,18 @@ public class SimulationEngine {
     }
 
     /**
-     * Simulates the failure of a specific node.
-     *
-     * @param simulationId Simulation identifier.
-     * @param nodeId       ID of the node to fail.
+     * Simulates failure of a specific node.
      */
     public void failNode(String simulationId, String nodeId) {
-        VirtualNodeThread vThread = nodeThreads.get(nodeId);
-        if (vThread != null) {
-            vThread.failNode();
-
-            // Send failure event update
+        VirtualNode vNode = nodeMap.get(nodeId);
+        if (vNode != null) {
+            vNode.failNode();
             sendSimulationEvent(simulationId, "Node " + nodeId + " has failed.");
         }
     }
 
     /**
-     * Retrieves the current metrics snapshot.
-     *
-     * @return MetricsSnapshot containing simulation performance data.
+     * Retrieves current metrics snapshot.
      */
     public MetricsSnapshot getMetricsSnapshot() {
         return metricsCollector.getSnapshot();
