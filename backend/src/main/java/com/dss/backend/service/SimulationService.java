@@ -1,27 +1,32 @@
 package com.dss.backend.service;
 
-import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
-import com.dss.backend.algorithm.consensus.ConsensusAlgorithmFactory;
 import com.dss.backend.controller.SimulationWebSocketController;
-import com.dss.backend.dto.EventDTO;
-import com.dss.backend.engine.concurrent.MessageRouter;
-import com.dss.backend.engine.concurrent.SimulationEngine;
-import com.dss.backend.engine.concurrent.TopologyPlacer;
 import com.dss.backend.exception.ResourceNotFoundException;
-import com.dss.backend.metrics.MetricsSnapshot;
-import com.dss.backend.model.*;
+import com.dss.backend.model.Event;
+import com.dss.backend.model.EventType;
+import com.dss.backend.model.Node;
+import com.dss.backend.model.Simulation;
+import com.dss.backend.model.SimulationStatus;
+import com.dss.backend.model.TopologyType;
 import com.dss.backend.repository.NodeRepository;
 import com.dss.backend.repository.SimulationRepository;
+import com.dss.backend.engine.concurrent.MessageRouter;
+import com.dss.backend.engine.service.NodeInitializationService;
+import com.dss.backend.engine.service.MetricsUpdateService;
+import com.dss.backend.engine.service.EventLoggerService;
+import com.dss.backend.engine.service.SimulationOrchestrator;
+import com.dss.backend.metrics.DefaultMetricsCollector;
+import com.dss.backend.metrics.MetricsSnapshot;
+import com.dss.backend.metrics.PerformanceMetricsCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 
 @Service
 public class SimulationService {
@@ -37,9 +42,14 @@ public class SimulationService {
     @Autowired
     private SimulationWebSocketController simulationWebSocketController;
 
+    // Shared scheduler for simulation tasks.
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(10);
 
-    // Map to hold running simulation engines (keyed by simulation ID)
-    private final Map<String, SimulationEngine> engines = new ConcurrentHashMap<>();
+    // Map of simulation ID to its orchestrator.
+    private final Map<String, SimulationOrchestrator> orchestrators = new ConcurrentHashMap<>();
+
+    // A shared metrics collector used by MetricsUpdateService.
+    private final PerformanceMetricsCollector metricsCollector = new DefaultMetricsCollector();
 
     public List<Simulation> getAllSimulations() {
         return simulationRepository.findAll();
@@ -51,7 +61,7 @@ public class SimulationService {
     }
 
     public Simulation saveSimulation(Simulation simulation) {
-        // The Simulation object includes an embedded SimulationConfig (if provided)
+        // The Simulation object includes an embedded SimulationConfig (if provided).
         return simulationRepository.save(simulation);
     }
 
@@ -62,124 +72,98 @@ public class SimulationService {
     }
 
     public void runSimulation(String simulationId) {
-        // 1. Retrieve the simulation from the database or throw an exception if not found
+        // 1. Retrieve the simulation from the repository.
         Simulation simulation = simulationRepository.findById(simulationId)
-                .orElseThrow(() -> new ResourceNotFoundException("Simulation not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + simulationId));
 
-        // 2. Retrieve the list of nodes that will participate in the simulation
+        // 2. Retrieve all nodes participating in the simulation.
         List<Node> nodes = nodeRepository.findAll();
 
-        // 3. Create a message router for communication between nodes
+        // 3. Create a shared MessageRouter.
         MessageRouter router = new MessageRouter();
 
-        // 4. Create and configure the SimulationEngine, injecting the WebSocketController
-        SimulationEngine engine = new SimulationEngine(simulationWebSocketController);
-        engine.initializeNodes(nodes, simulation.getConfig(), simulation.getConfig().getTopologyType());
+        // 4. Instantiate the new services.
+        NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler);
+        MetricsUpdateService metricsUpdateService = new MetricsUpdateService(metricsCollector, simulationWebSocketController, scheduler);
+        EventLoggerService eventLoggerService = new EventLoggerService(simulationWebSocketController);
 
-        // Store the engine in the map of running simulations
-        engines.put(simulationId, engine);
+        // 5. Create the SimulationOrchestrator.
+        SimulationOrchestrator orchestrator = new SimulationOrchestrator(
+                router,
+                scheduler,
+                nodeInitService,
+                metricsUpdateService,
+                eventLoggerService
+        );
 
-        // 5. Set up network topology if defined in the simulation config
+        // 6. Use the orchestrator to initialize simulation nodes.
+        orchestrator.initializeSimulationNodes(nodes, simulation.getConfig(), simulation.getConfig().getTopologyType());
+
+        // Store the orchestrator for later control.
+        orchestrators.put(simulationId, orchestrator);
+
+        // 7. (Optional) Compute the topology mapping and log it.
         if (simulation.getConfig() != null && simulation.getConfig().getTopologyType() != null) {
-            Map<String, List<String>> neighborMapping = TopologyPlacer.assignNeighbors(
-                    simulation.getConfig().getTopologyType(), nodes);
+            Map<String, List<String>> neighborMapping = orchestrator.computeTopologyMapping(nodes, simulation.getConfig().getTopologyType());
             logger.info("Computed neighbor mapping: {}", neighborMapping);
         }
 
-        // 6. Update the simulation status to RUNNING and save it to the database
+        // 8. Update the simulation status to RUNNING and persist.
         simulation.setStatus(SimulationStatus.RUNNING);
         simulationRepository.save(simulation);
 
-        // 7. Start the simulation engine
-        engine.startSimulation(simulationId);
+        // 9. Start the simulation orchestration.
+        orchestrator.startSimulation(simulationId);
 
-        // 8. Start sending real-time updates (metrics & events) via WebSocket
-        engine.startMetricsUpdates(simulationId);
-
-        // 9. Log and broadcast an event indicating that the simulation has started
+        // 10. Log and broadcast a "simulation started" event.
         Event startEvent = new Event();
         startEvent.setType(EventType.SIMULATION_STARTED);
         startEvent.setDetails("Simulation has started.");
         startEvent.setTimestamp(LocalDateTime.now());
+        simulationWebSocketController.sendEventUpdate(simulationId, eventLoggerService.mapEventToDTO(startEvent));
+        eventLoggerService.logEvent(simulationId, startEvent.getDetails(), startEvent.getType());
 
-        // Send WebSocket event update
-        simulationWebSocketController.sendEventUpdate(simulationId, mapEventToDTO(startEvent));
-
-        // Persist the event in MongoDB
-        logEvent(simulationId, startEvent);
-
-        // 10. Optionally, start failure simulation if configured
+        // 11. If configured, start failure simulation.
         if (simulation.getConfig() != null) {
             double failurePercentage = simulation.getConfig().getFailurePercentage();
             if (failurePercentage > 0) {
-                // Start failure simulation with the given failure rate
-                engine.startFailureSimulation(simulationId, failurePercentage, 5000);
+                orchestrator.startFailureSimulation(simulationId, failurePercentage, 5000);
                 logger.info("Started failure simulation with {}% failure rate.", failurePercentage);
 
-                // 12. Log and broadcast an event indicating failure simulation has started
                 Event failureEvent = new Event();
                 failureEvent.setType(EventType.FAILURE_SIMULATION_STARTED);
                 failureEvent.setDetails("Failure simulation started with " + failurePercentage + "% failure rate.");
                 failureEvent.setTimestamp(LocalDateTime.now());
-
-                // Send WebSocket event update
-                simulationWebSocketController.sendEventUpdate(simulationId, mapEventToDTO(failureEvent));
-
-                // Persist the event in MongoDB
-                logEvent(simulationId, failureEvent);
+                simulationWebSocketController.sendEventUpdate(simulationId, eventLoggerService.mapEventToDTO(failureEvent));
+                eventLoggerService.logEvent(simulationId, failureEvent.getDetails(), failureEvent.getType());
             }
         }
     }
 
-    private List<String> getAllNodeIds(List<Node> nodes) {
-        return nodes.stream().map(Node::getId).toList();
+    public void stopSimulation(String simulationId) {
+        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
+        if (orchestrator != null) {
+            orchestrator.stopSimulation(simulationId);
+            orchestrators.remove(simulationId);
+            Simulation simulation = simulationRepository.findById(simulationId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + simulationId));
+            simulation.setStatus(SimulationStatus.COMPLETED);
+            simulationRepository.save(simulation);
+        }
     }
 
     public void failNode(String simulationId, String nodeId) {
-        SimulationEngine engine = engines.get(simulationId);
-        if (engine != null) {
-            engine.failNode(simulationId, nodeId);
+        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
+        if (orchestrator != null) {
+            orchestrator.failNode(simulationId, nodeId);
         }
     }
 
-    public void logEvent(String simulationId, Event event) {
-        Simulation simulation = getSimulationByIdOrThrow(simulationId);
-        if (simulation.getEvents() == null) {
-            simulation.setEvents(new ArrayList<>());
-        }
-        simulation.getEvents().add(event);
-        simulationRepository.save(simulation);
-    }
-
-    private EventDTO mapEventToDTO(Event event) {
-        EventDTO dto = new EventDTO();
-        dto.setType(event.getType());
-        dto.setDetails(event.getDetails());
-        dto.setTimestamp(event.getTimestamp());
-        return dto;
-    }
-
-
-    public void stopSimulation(String simulationId) {
-        SimulationEngine engine = engines.get(simulationId);
-        if (engine != null) {
-            engine.stopSimulation(simulationId);
-            engines.remove(simulationId);
-
-            // Optionally update simulation status to COMPLETED
-            Simulation sim = simulationRepository.findById(simulationId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Simulation not found"));
-            sim.setStatus(SimulationStatus.COMPLETED);
-            simulationRepository.save(sim);
-        }
-    }
-
-    // Retrieves the metrics snapshot for a given simulation
     public MetricsSnapshot getSimulationMetrics(String simulationId) {
-        SimulationEngine engine = engines.get(simulationId);
-        if (engine == null) {
+        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
+        if (orchestrator == null) {
             throw new ResourceNotFoundException("Simulation not found or not running for id: " + simulationId);
         }
-        return engine.getMetricsSnapshot();
+        return orchestrator.getMetricsSnapshot();
     }
 }
