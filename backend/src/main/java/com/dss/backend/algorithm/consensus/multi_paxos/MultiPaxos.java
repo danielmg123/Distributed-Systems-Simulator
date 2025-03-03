@@ -1,6 +1,7 @@
 package com.dss.backend.algorithm.consensus.multi_paxos;
 
 import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
+import com.dss.backend.engine.concurrent.SimulationMessageFactory;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.Setter;
@@ -236,8 +237,9 @@ public class MultiPaxos implements ConsensusAlgorithm {
             response.setProposalNumber(proposalNumber);
             response.setAcceptedId(acceptedId);
             response.setAcceptedValue(acceptedValue);
-            SimulationMessage promiseMsg = new SimulationMessage("self", sourceNodeId, MessageType.PROMISE, response);
-            router.messageSent(promiseMsg);
+            SimulationMessage msg = SimulationMessageFactory.createMessage("self", sourceNodeId, MessageType.PROMISE, payload);
+            router.messageSent(msg);
+
             logger.info("Sent PROMISE for proposal #{} to {}", proposalNumber, sourceNodeId);
         } else {
             logger.info("Ignored PREPARE_REQUEST for proposal #{} because promisedId is {}", proposalNumber, promisedId);
@@ -289,8 +291,8 @@ public class MultiPaxos implements ConsensusAlgorithm {
             PaxosPayload response = new PaxosPayload();
             response.setProposalNumber(proposalNumber);
             response.setProposedValue(acceptedValue);
-            SimulationMessage acceptedMsg = new SimulationMessage("self", sourceNodeId, MessageType.ACCEPTED, response);
-            router.messageSent(acceptedMsg);
+            SimulationMessage msg = SimulationMessageFactory.createMessage("self", sourceNodeId, MessageType.ACCEPTED, payload);
+            router.messageSent(msg);
             logger.info("Accepted proposal #{} from {}", proposalNumber, sourceNodeId);
         } else {
             logger.info("Rejected ACCEPT_REQUEST for proposal #{} (promisedId = {})", proposalNumber, promisedId);

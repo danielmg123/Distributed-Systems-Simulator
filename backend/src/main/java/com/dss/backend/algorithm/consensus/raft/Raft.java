@@ -5,6 +5,7 @@ import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
+import com.dss.backend.engine.concurrent.SimulationMessageFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -177,13 +178,9 @@ public class Raft implements ConsensusAlgorithm {
         response.setTerm(currentTerm);
         response.setVoteGranted(grantVote);
 
-        SimulationMessage sm = new SimulationMessage(
-            myNodeId,
-            sourceNode,
-            MessageType.PROPOSAL,
-            response
-        );
+        SimulationMessage sm = SimulationMessageFactory.createMessage(myNodeId, sourceNode, MessageType.PROPOSAL, response);
         router.messageSent(sm);
+
     }
 
     private void handleRequestVoteResponse(String sourceNode, RaftPayload rp) {
@@ -268,12 +265,7 @@ public class Raft implements ConsensusAlgorithm {
         payload.setEntries(newEntries);
         payload.setLeaderCommit(commitIndex);
 
-        SimulationMessage sm = new SimulationMessage(
-            myNodeId,
-            follower,
-            MessageType.PROPOSAL,
-            payload
-        );
+        SimulationMessage sm = SimulationMessageFactory.createMessage(myNodeId, follower, MessageType.PROPOSAL, payload);
         router.messageSent(sm);
     }
 
@@ -365,13 +357,9 @@ public class Raft implements ConsensusAlgorithm {
         rp.setMatchIndex(matchIndex);
         rp.setConflictTerm(conflictTerm);
 
-        SimulationMessage sm = new SimulationMessage(
-            myNodeId,
-            targetNode,
-            MessageType.PROPOSAL,
-            rp
-        );
+        SimulationMessage sm = SimulationMessageFactory.createMessage(myNodeId, targetNode, MessageType.PROPOSAL, rp);
         router.messageSent(sm);
+
     }
 
     private void handleAppendEntriesResponse(String follower, RaftPayload rp) {

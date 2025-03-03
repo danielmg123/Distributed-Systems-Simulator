@@ -9,6 +9,7 @@ import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.engine.concurrent.MessageType;
+import com.dss.backend.engine.concurrent.SimulationMessageFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -132,12 +133,7 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
             reply.setAcceptedId(paxosState.getAcceptedId());
             reply.setAcceptedValue(paxosState.getAcceptedValue());
 
-            SimulationMessage promiseMsg = new SimulationMessage(
-                myNodeId,
-                sourceNode,
-                MessageType.PROMISE,
-                reply
-            );
+            SimulationMessage promiseMsg = SimulationMessageFactory.createMessage(myNodeId, sourceNode, MessageType.PROMISE, reply);
             router.messageSent(promiseMsg);
         }
         // else: we could send a REJECT message if we want, or just ignore
@@ -189,13 +185,8 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
         payload.setProposedValue(value);
 
         for (String nodeId : allNodeIds) {
-            SimulationMessage msg = new SimulationMessage(
-                myNodeId,
-                nodeId,
-                MessageType.ACCEPT_REQUEST,
-                payload
-            );
-            router.messageSent(msg);
+            SimulationMessage promiseMsg = SimulationMessageFactory.createMessage(myNodeId, nodeId, MessageType.PROMISE, payload);
+            router.messageSent(promiseMsg);
         }
     }
 
@@ -212,13 +203,8 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
             acceptedPayload.setProposalNumber(proposalNumber);
             acceptedPayload.setProposedValue(payload.getProposedValue());
 
-            SimulationMessage acceptedMsg = new SimulationMessage(
-                myNodeId,
-                sourceNode,
-                MessageType.ACCEPTED,
-                acceptedPayload
-            );
-            router.messageSent(acceptedMsg);
+            SimulationMessage promiseMsg = SimulationMessageFactory.createMessage(myNodeId, sourceNode, MessageType.PROMISE, acceptedPayload);
+            router.messageSent(promiseMsg);
         }
         // else: we could send a REJECT or ignore
     }
@@ -250,30 +236,6 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
         // For now, just do localCount
         return proposalCounter.incrementAndGet();
     }
-
-    // Optional final "commit" broadcast
-    /*
-    private void broadcastCommit(int proposalNumber, Object value) {
-        PaxosPayload payload = new PaxosPayload();
-        payload.setProposalNumber(proposalNumber);
-        payload.setProposedValue(value);
-
-        for (String nodeId : allNodeIds) {
-            SimulationMessage msg = new SimulationMessage(
-                myNodeId,
-                nodeId,
-                MessageType.COMMIT,
-                payload
-            );
-            router.messageSent(msg);
-        }
-    }
-
-    private void onCommitMessage(String sourceNode, PaxosPayload payload) {
-        paxosState.setChosenValue(payload.getProposedValue());
-        System.out.println("Node " + myNodeId + " learned CHOSEN value: " + payload.getProposedValue());
-    }
-    */
 
     /**
      * Data structure for Phase 1 at the proposer:

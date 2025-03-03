@@ -5,6 +5,7 @@ import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
+import com.dss.backend.engine.concurrent.SimulationMessageFactory;
 import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -132,7 +133,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
         logger.info("Node {} received PREPARE for op #{} with value: {} from {}", nodeId, receivedOp, proposedValue, sourceNodeId);
         // Reply with a PREPARE_RESPONSE.
         VsrPayload response = new VsrPayload(MessageType.PREPARE_RESPONSE, view, receivedOp, proposedValue);
-        SimulationMessage responseMsg = new SimulationMessage(nodeId, sourceNodeId, null, response);
+        SimulationMessage responseMsg = SimulationMessageFactory.createMessage(nodeId, sourceNodeId, MessageType.PREPARE_RESPONSE, response);
         messageRouter.messageSent(responseMsg);
         logger.info("Node {} sent PREPARE_RESPONSE for op #{} to {}", nodeId, receivedOp, sourceNodeId);
     }

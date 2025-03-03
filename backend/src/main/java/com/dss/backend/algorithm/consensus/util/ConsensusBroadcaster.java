@@ -3,6 +3,7 @@ package com.dss.backend.algorithm.consensus.util;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
+import com.dss.backend.engine.concurrent.SimulationMessageFactory;
 
 public class ConsensusBroadcaster {
     private final MessageRouter router;
@@ -19,9 +20,10 @@ public class ConsensusBroadcaster {
     public void broadcast(MessageType messageType, Object payload) {
         for (String targetNodeId : router.getRegisteredNodeIds()) {
             if (!targetNodeId.equals(localNodeId)) {
-                SimulationMessage msg = new SimulationMessage(localNodeId, targetNodeId, messageType, payload);
+                SimulationMessage msg = SimulationMessageFactory.createMessage(localNodeId, targetNodeId, messageType, payload);
                 router.messageSent(msg);
             }
         }
     }
+
 }
