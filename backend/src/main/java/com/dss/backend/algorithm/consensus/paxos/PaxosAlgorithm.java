@@ -44,7 +44,7 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
     private final int majority;
 
     // For each proposalNumber we (as Proposer) start, we store ProposerData
-    private final ConcurrentHashMap<Integer, ProposerData> proposalDataMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, ProposerState> proposalStateMap = new ConcurrentHashMap<>();
 
     // Accept-count for each proposalNumber (Phase 2)
     private final ConcurrentHashMap<Integer, Integer> acceptCountMap = new ConcurrentHashMap<>();
@@ -62,7 +62,7 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
     public void propose(Object value) {
         int proposalNumber = generateNextProposalNumber();
         // Store proposer data...
-        proposalDataMap.put(proposalNumber, new ProposerData(value));
+        proposalStateMap.put(proposalNumber, new ProposerState(value));
         broadcastPrepareRequest(proposalNumber, value);
     }
 
@@ -139,41 +139,30 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
         // else: we could send a REJECT message if we want, or just ignore
     }
 
-    private void onPromise(String sourceNode, PaxosPayload payload) {
+    private void onPromise(String sourceNodeId, PaxosPayload payload) {
         int proposalNumber = payload.getProposalNumber();
-        ProposerData data = proposalDataMap.get(proposalNumber);
-        if (data == null) {
-            // Possibly a stale or duplicated message. Ignore.
+        ProposerState state = proposalStateMap.get(proposalNumber);
+        if (state == null) {
+            // Stale or duplicate promise; ignore.
             return;
         }
+        // Increment the promise count
+        state.incrementPromiseCount();
+        // Update the highest accepted proposal if applicable
+        state.updateHighestAccepted(payload.getAcceptedId(), payload.getAcceptedValue());
 
-        // 1. Bump the count of promises
-        data.promiseCount += 1;
+        logger.info("Received PROMISE from {} for proposal #{} (count = {})",
+                sourceNodeId, proposalNumber, state.getPromiseCount());
 
-        // 2. Check if the acceptor has a previously accepted proposal
-        int acceptedId = payload.getAcceptedId();
-        Object acceptedValue = payload.getAcceptedValue();
-
-        // If the acceptor has accepted something with the highest acceptedId so far, adopt it.
-        if (acceptedId > data.highestAcceptedId) {
-            data.highestAcceptedId = acceptedId;
-            data.highestAcceptedValue = acceptedValue;
-        }
-
-        // 3. If we reached a majority, move to Phase 2
-        if (data.promiseCount >= majority) {
-            // Decide what value to use for Accept:
-            // If no acceptor had an accepted proposal, we use our originalProposedValue.
-            Object finalValue;
-            if (data.highestAcceptedId > -1 && data.highestAcceptedValue != null) {
-                finalValue = data.highestAcceptedValue;
-            } else {
-                finalValue = data.originalValue;
-            }
-
-            broadcastAcceptRequest(proposalNumber, finalValue);
+        // If quorum is reached, decide on the value and move to the accept phase.
+        if (state.getPromiseCount() >= majority) {
+            Object valueToAccept = (state.getHighestAcceptedValue() != null)
+                    ? state.getHighestAcceptedValue()
+                    : state.getOriginalValue();
+            broadcastAcceptRequest(proposalNumber, valueToAccept);
         }
     }
+
 
     // ---------------------- Phase 2: Accept / Accepted ----------------------
     private void broadcastAcceptRequest(int proposalNumber, Object value) {
@@ -235,28 +224,5 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
         // If each node has a numeric ID, we can combine them for uniqueness across cluster
         // For now, just do localCount
         return proposalCounter.incrementAndGet();
-    }
-
-    /**
-     * Data structure for Phase 1 at the proposer:
-     * We store how many PROMISEs we have, the original proposed value,
-     * and track the highest accepted proposal among all PROMISE responses.
-     */
-    private static class ProposerData {
-        // The value this proposer started with in propose()
-        final Object originalValue;
-
-        // How many PROMISEs received so far
-        int promiseCount = 0;
-
-        // The highest acceptedId seen among all PROMISEs
-        int highestAcceptedId = -1;
-
-        // The value associated with that highest acceptedId
-        Object highestAcceptedValue = null;
-
-        ProposerData(Object originalValue) {
-            this.originalValue = originalValue;
-        }
     }
 }

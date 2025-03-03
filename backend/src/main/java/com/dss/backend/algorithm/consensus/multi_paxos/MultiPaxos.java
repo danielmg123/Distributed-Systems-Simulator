@@ -1,5 +1,6 @@
 package com.dss.backend.algorithm.consensus.multi_paxos;
 
+import com.dss.backend.algorithm.consensus.paxos.ProposerState;
 import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.engine.concurrent.SimulationMessageFactory;
 import jakarta.annotation.PostConstruct;
@@ -33,15 +34,13 @@ public class MultiPaxos implements ConsensusAlgorithm {
     private boolean isLeader = false;
     private int proposalCounter = 0;
 
+    private ProposerState proposerState;
+
     // Prepare phase variables
     @Getter
     private boolean preparePhaseCompleted = false;
     @Getter
     private int currentProposalNumber = 0;
-    private int preparePromiseCount = 0;
-    private Object proposedValueForPrepare;
-    private int highestAcceptedId = -1;
-    private Object highestAcceptedValue = null;
 
     // Accept phase variables
     private int acceptResponseCount = 0;
@@ -106,22 +105,17 @@ public class MultiPaxos implements ConsensusAlgorithm {
         if (isLeader) {
             if (!preparePhaseCompleted) {
                 currentProposalNumber = ++proposalCounter;
-                proposedValueForPrepare = value;
-                preparePromiseCount = 0;
-                highestAcceptedId = -1;
-                highestAcceptedValue = null;
-                // Log and broadcast the prepare phase start
+                // Initialize the per-proposal state
+                proposerState = new ProposerState(value);
                 broadcastPrepareRequest(currentProposalNumber);
-
-                // Use the injected scheduler (set via setScheduler) and use the externalized timeout:
+                // Use the scheduler for timeout (unchanged)
                 scheduler.schedule(() -> {
                     if (!preparePhaseCompleted) {
-                        // Timeout action
                         resetPreparePhase();
                     }
-                }, prepareTimeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+                }, prepareTimeoutMillis, TimeUnit.MILLISECONDS);
             } else {
-                // Fast path
+                // Fast path for subsequent proposals:
                 currentProposalNumber = ++proposalCounter;
                 broadcastAcceptRequest(currentProposalNumber, value);
             }
@@ -132,11 +126,10 @@ public class MultiPaxos implements ConsensusAlgorithm {
 
     private void resetPreparePhase() {
         preparePhaseCompleted = false;
-        preparePromiseCount = 0;
-        highestAcceptedId = -1;
-        highestAcceptedValue = null;
+        proposerState = null;
         logger.info("Resetting prepare phase for proposal #{}", currentProposalNumber);
     }
+
 
     /**
      * Accepts a proposal if its proposal number is at least the promised value.
@@ -202,9 +195,11 @@ public class MultiPaxos implements ConsensusAlgorithm {
     private void broadcastPrepareRequest(int proposalNumber) {
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
-        payload.setProposedValue(proposedValueForPrepare);
+        // Use the original proposed value from the proposer state
+        payload.setProposedValue(proposerState.getOriginalValue());
         broadcaster.broadcast(MessageType.PREPARE_REQUEST, payload);
     }
+
 
     private void broadcastAcceptRequest(int proposalNumber, Object value) {
         PaxosPayload payload = new PaxosPayload();
@@ -261,20 +256,18 @@ public class MultiPaxos implements ConsensusAlgorithm {
         if (proposalNumber != currentProposalNumber) {
             return; // Stale promise.
         }
-        preparePromiseCount++;
-        // If the responder had already accepted a proposal, use the highest one.
-        if (payload.getAcceptedId() > highestAcceptedId && payload.getAcceptedValue() != null) {
-            highestAcceptedId = payload.getAcceptedId();
-            highestAcceptedValue = payload.getAcceptedValue();
-        }
-        logger.info("Received PROMISE from {} for proposal #{} (count = {})", sourceNodeId, proposalNumber, preparePromiseCount);
-        if (preparePromiseCount >= quorum) {
-            // Decide on the value: if any node had already accepted a proposal, adopt that.
-            Object valueToAccept = (highestAcceptedValue != null) ? highestAcceptedValue : proposedValueForPrepare;
+        proposerState.incrementPromiseCount();
+        proposerState.updateHighestAccepted(payload.getAcceptedId(), payload.getAcceptedValue());
+        logger.info("Received PROMISE from {} for proposal #{} (count = {})", sourceNodeId, proposalNumber, proposerState.getPromiseCount());
+        if (proposerState.getPromiseCount() >= quorum) {
+            Object valueToAccept = (proposerState.getHighestAcceptedValue() != null)
+                    ? proposerState.getHighestAcceptedValue()
+                    : proposerState.getOriginalValue();
             preparePhaseCompleted = true;
             logger.info("Prepare phase complete with quorum reached. Moving to accept phase with value: {}", valueToAccept);
             broadcastAcceptRequest(currentProposalNumber, valueToAccept);
         }
+
     }
 
     /**
