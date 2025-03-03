@@ -58,6 +58,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
 
     public void setMessageRouter(MessageRouter router) {
         this.router = router;
+        // For simplicity, assume "self" as the local node id. In future version might inject that too.
         this.broadcaster = new ConsensusBroadcaster(router, "self");
     }
 
@@ -91,7 +92,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
                 logger.info("Leader starting prepare phase with proposal #{} and proposed value: {}", currentProposalNumber, value);
                 broadcastPrepareRequest(currentProposalNumber);
 
-                // Schedule a timeout task for the prepare phase:
+                // Use the injected scheduler for timeout.
                 scheduler.schedule(() -> {
                     if (!preparePhaseCompleted) {
                         logger.info("Prepare phase timeout for proposal #{}", currentProposalNumber);
@@ -144,8 +145,6 @@ public class MultiPaxos implements ConsensusAlgorithm {
         committedValue = value;
         logger.info("MultiPaxos committed value: {}", value);
         broadcastCommit(currentProposalNumber, value);
-        // Reset preparePhase for subsequent proposals if needed.
-        // (Depending on the protocol design, we might retain preparePhaseCompleted until leadership changes.)
     }
 
     /**
@@ -153,7 +152,6 @@ public class MultiPaxos implements ConsensusAlgorithm {
      */
     @Override
     public void handleMessage(SimulationMessage msg) {
-        // Handle messages based on their type.
         MessageType type = msg.getType();
         PaxosPayload payload = (PaxosPayload) msg.getPayload();
         switch (type) {

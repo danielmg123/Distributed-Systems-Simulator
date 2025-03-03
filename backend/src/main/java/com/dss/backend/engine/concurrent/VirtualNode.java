@@ -21,13 +21,13 @@ public class VirtualNode {
     private final ConsensusAlgorithm algorithm;
     private final MessageRouter router;
 
-    // Queue for incoming messages.
+    // A blocking queue for inbound messages.
     private final BlockingQueue<SimulationMessage> inboundQueue = new LinkedBlockingQueue<>();
 
     // Each neighbor has its own phi detector.
     private final Map<String, PhiAccrual> phiDetectors = new ConcurrentHashMap<>();
 
-    // These executors are injected externally so that scheduling and processing can be shared.
+    // Dependencies are injected rather than created internally.
     private final ExecutorService messageProcessingExecutor;
     private final ScheduledExecutorService scheduler;
 
@@ -35,13 +35,13 @@ public class VirtualNode {
     private ScheduledFuture<?> phiCheckerFuture;
     private final double phiThreshold = 8.0;
 
-    // Optionally, an external heartbeat service can be set.
     @Getter @Setter
     private Heartbeat heartbeat;
 
     // Lifecycle flag.
     private volatile boolean running = false;
 
+    // All dependencies are provided via the constructor.
     public VirtualNode(Node node,
                        ConsensusAlgorithm algorithm,
                        MessageRouter router,
@@ -55,18 +55,18 @@ public class VirtualNode {
     }
 
     /**
-     * Starts this virtual node: it schedules the message processing loop and the phi-checker.
+     * Starts the virtual node: it schedules its message processing loop and the phi-checker.
      */
     public void start() {
         running = true;
-        // Submit the main message processing loop to the dedicated worker pool.
+        // Submit the main message processing loop to the provided executor.
         messageProcessingExecutor.submit(this::processMessages);
         // Start the phi-checking task on the injected scheduler.
         startPhiChecker();
     }
 
     /**
-     * Stops this virtual node and cancels scheduled tasks.
+     * Stops the virtual node.
      */
     public void stop() {
         running = false;
@@ -80,7 +80,7 @@ public class VirtualNode {
         while (running) {
             try {
                 SimulationMessage msg = inboundQueue.take();
-                // Delegate processing to the worker pool; this allows concurrent processing if needed.
+                // Delegate processing to the executor.
                 messageProcessingExecutor.submit(() -> processMessage(msg));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

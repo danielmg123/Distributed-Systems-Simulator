@@ -15,6 +15,7 @@ import com.dss.backend.engine.service.NodeInitializationService;
 import com.dss.backend.engine.service.MetricsUpdateService;
 import com.dss.backend.engine.service.EventLoggerService;
 import com.dss.backend.engine.service.SimulationOrchestrator;
+import com.dss.backend.algorithm.consensus.ConsensusAlgorithmFactory;
 import com.dss.backend.metrics.DefaultMetricsCollector;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.metrics.PerformanceMetricsCollector;
@@ -83,7 +84,10 @@ public class SimulationService {
         MessageRouter router = new MessageRouter();
 
         // 4. Instantiate the new services.
-        NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler);
+        // Create a ConsensusAlgorithmFactory instance with the shared router and scheduler.
+        ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(router, scheduler);
+        // Now pass the factory into the NodeInitializationService.
+        NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler, consensusFactory);
         MetricsUpdateService metricsUpdateService = new MetricsUpdateService(metricsCollector, simulationWebSocketController, scheduler);
         EventLoggerService eventLoggerService = new EventLoggerService(simulationWebSocketController);
 

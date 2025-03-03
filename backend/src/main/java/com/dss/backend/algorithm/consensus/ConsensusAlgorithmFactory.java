@@ -8,31 +8,40 @@ import com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm;
 import com.dss.backend.algorithm.consensus.raft.Raft;
 import com.dss.backend.algorithm.consensus.multi_paxos.MultiPaxos;
 import com.dss.backend.engine.concurrent.MessageRouter;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
+import java.util.List;
+import java.util.concurrent.ScheduledExecutorService;
+
+@Component
 public class ConsensusAlgorithmFactory {
 
+    private final MessageRouter router;
+    private final ScheduledExecutorService scheduler;
+
+    @Autowired
+    public ConsensusAlgorithmFactory(MessageRouter router, ScheduledExecutorService scheduler) {
+        this.router = router;
+        this.scheduler = scheduler;
+    }
+
     /**
-     * Create a ConsensusAlgorithm instance based on the configuration.
+     * Creates a ConsensusAlgorithm based on configuration. Note that the shared MessageRouter and Scheduler
+     * are injected into the factory.
      *
-     * @param nodeId       The local node identifier.
-     * @param allNodeIds   The list of all node identifiers.
-     * @param config       The simulation configuration (may contain algorithm-specific parameters).
-     * @param router       The MessageRouter used for inter node communication.
-     * @return An instance of ConsensusAlgorithm.
+     * @param nodeId     Local node ID.
+     * @param allNodeIds List of all node IDs.
+     * @param config     Simulation configuration.
+     * @return a configured ConsensusAlgorithm.
      */
-    public static ConsensusAlgorithm createAlgorithm(String nodeId, List<String> allNodeIds,
-                                                     SimulationConfig config, MessageRouter router,
-                                                     ScheduledExecutorService scheduler) {
-        // Default to Paxos if no configuration is provided.
+    public ConsensusAlgorithm createAlgorithm(String nodeId, List<String> allNodeIds, SimulationConfig config) {
         if (config == null || config.getAlgorithmType() == null) {
             return new PaxosAlgorithm(nodeId, allNodeIds, router);
         }
 
         switch (config.getAlgorithmType()) {
             case PAXOS:
-                // Can pass additional algorithm-specific parameters from config.
                 return new PaxosAlgorithm(nodeId, allNodeIds, router);
             case RAFT:
                 return new Raft(nodeId, allNodeIds, router);
@@ -41,17 +50,15 @@ public class ConsensusAlgorithmFactory {
                 multiPaxos.setMessageRouter(router);
                 multiPaxos.setTotalNodes(allNodeIds.size());
                 multiPaxos.setLeader(allNodeIds.get(0).equals(nodeId));
-                multiPaxos.setScheduler(scheduler); // inject the provided scheduler
+                multiPaxos.setScheduler(scheduler);
                 return multiPaxos;
             case VIEW_STAMPED_REPLICATION:
                 ViewStampedReplication vsr = new ViewStampedReplication();
                 vsr.setMessageRouter(router);
-                // Additional initialization (nodeId, totalNodes, primary flag) should be done after instantiation.
                 return vsr;
             case ZAB:
                 Zab zab = new Zab();
                 zab.setMessageRouter(router);
-                // Further initialization (nodeId, totalNodes, primary flag) should be done externally.
                 return zab;
             default:
                 throw new IllegalArgumentException("Unsupported consensus algorithm: " + config.getAlgorithmType());

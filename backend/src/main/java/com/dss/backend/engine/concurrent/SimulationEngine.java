@@ -36,7 +36,7 @@ public class SimulationEngine {
     // WebSocket Controller for real-time updates
     private final SimulationWebSocketController simulationWebSocketController;
 
-    // Centralized scheduler for simulation tasks and per-node tasks
+    // Centralized scheduler for simulation and per-node tasks
     private final ScheduledExecutorService centralScheduler = Executors.newScheduledThreadPool(10);
     // Dedicated worker pool for processing VirtualNode messages
     private final ExecutorService workerPool = Executors.newFixedThreadPool(10);
@@ -55,25 +55,22 @@ public class SimulationEngine {
     /**
      * Initializes nodes for the simulation.
      *
-     * @param nodes         List of nodes participating in the simulation.
-     * @param config        Simulation configuration
-     * @param topologyType  Type of topology used
+     * @param nodes        List of nodes participating in the simulation.
+     * @param config       Simulation configuration
+     * @param topologyType Type of topology used
      */
     public void initializeNodes(List<Node> nodes, SimulationConfig config, TopologyType topologyType) {
         List<String> allNodeIds = nodes.stream()
                 .map(Node::getId)
                 .collect(Collectors.toList());
 
+        // Create a ConsensusAlgorithmFactory with the shared messageRouter and scheduler.
+        ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(messageRouter, centralScheduler);
+
         for (Node node : nodes) {
             String nodeId = node.getId();
-            ConsensusAlgorithm consensus = ConsensusAlgorithmFactory.createAlgorithm(
-                    nodeId,         // local node id
-                    allNodeIds,     // all node ids
-                    config,         // simulation config
-                    messageRouter,  // shared message router
-                    centralScheduler // scheduler for timeouts, etc.
-            );
-            // Create VirtualNode with injected workerPool and scheduler.
+            ConsensusAlgorithm consensus = consensusFactory.createAlgorithm(nodeId, allNodeIds, config);
+            // Create VirtualNode with the injected workerPool and scheduler.
             VirtualNode vNode = new VirtualNode(node, consensus, messageRouter, workerPool, centralScheduler);
 
             // Setup and start heartbeat.
@@ -81,7 +78,7 @@ public class SimulationEngine {
             vNode.setHeartbeat(heartbeat);
             heartbeat.start(centralScheduler);
 
-            // Start the VirtualNode’s internal processing (message loop and phi-checker).
+            // Start the VirtualNode processing (message loop, phi-checker).
             vNode.start();
 
             messageRouter.registerNode(nodeId, vNode);
@@ -139,7 +136,6 @@ public class SimulationEngine {
         event.setType(EventType.SIMULATION_EVENT);
         event.setDetails(message);
         event.setTimestamp(LocalDateTime.now());
-
         simulationWebSocketController.sendEventUpdate(simulationId, event);
     }
 
@@ -189,7 +185,7 @@ public class SimulationEngine {
     }
 
     /**
-     * Retrieves current metrics snapshot.
+     * Retrieves the current metrics snapshot.
      */
     public MetricsSnapshot getMetricsSnapshot() {
         return metricsCollector.getSnapshot();
