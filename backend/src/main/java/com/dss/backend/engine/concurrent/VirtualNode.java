@@ -6,6 +6,7 @@ import java.util.concurrent.*;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.algorithm.failure.Heartbeat;
 import com.dss.backend.algorithm.failure.PhiAccrual;
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 import com.dss.backend.model.Node;
@@ -29,7 +30,7 @@ public class VirtualNode {
 
     // Dependencies are injected rather than created internally.
     private final ExecutorService messageProcessingExecutor;
-    private final ScheduledExecutorService scheduler;
+    private final Scheduler scheduler;
 
     // Handle to the scheduled phi-checker task.
     private ScheduledFuture<?> phiCheckerFuture;
@@ -46,7 +47,7 @@ public class VirtualNode {
                        ConsensusAlgorithm algorithm,
                        MessageRouter router,
                        ExecutorService messageProcessingExecutor,
-                       ScheduledExecutorService scheduler) {
+                       Scheduler scheduler) {
         this.node = node;
         this.algorithm = algorithm;
         this.router = router;

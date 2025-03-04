@@ -1,6 +1,7 @@
 package com.dss.backend.service;
 
 import com.dss.backend.controller.SimulationWebSocketController;
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.exception.ResourceNotFoundException;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
@@ -45,7 +46,7 @@ public class SimulationService {
 
     // Use the scheduler bean provided by AppConfig
     @Autowired
-    private ScheduledExecutorService scheduler;
+    private Scheduler scheduler;
 
     // Inject simulation properties to pass to child services.
     @Autowired

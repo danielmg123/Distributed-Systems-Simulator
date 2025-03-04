@@ -1,5 +1,6 @@
 package com.dss.backend.engine.service;
 
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.VirtualNode;
 import com.dss.backend.engine.concurrent.TopologyPlacer;
@@ -10,19 +11,16 @@ import com.dss.backend.model.EventType;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.SimulationConfig;
 import com.dss.backend.model.TopologyType;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ScheduledExecutorService;
 
 public class SimulationOrchestrator {
 
     private final AppLogger appLogger = new DefaultAppLogger(SimulationOrchestrator.class);
 
     private final MessageRouter messageRouter;
-    private final ScheduledExecutorService scheduler;
+    private final Scheduler scheduler;
     private final NodeInitializationService nodeInitializationService;
     private final MetricsUpdateService metricsUpdateService;
     private final EventLoggerService eventLoggerService;
@@ -32,7 +30,7 @@ public class SimulationOrchestrator {
     private Map<String, List<String>> topologyMapping;
 
     public SimulationOrchestrator(MessageRouter messageRouter,
-                                  ScheduledExecutorService scheduler,
+                                  Scheduler scheduler,
                                   NodeInitializationService nodeInitializationService,
                                   MetricsUpdateService metricsUpdateService,
                                   EventLoggerService eventLoggerService) {

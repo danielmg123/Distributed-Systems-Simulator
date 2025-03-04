@@ -2,6 +2,7 @@ package com.dss.backend.algorithm.consensus.multi_paxos;
 
 import com.dss.backend.algorithm.consensus.paxos.ProposerState;
 import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.engine.concurrent.SimulationMessageFactory;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
@@ -17,10 +18,8 @@ import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.algorithm.consensus.paxos.PaxosPayload;
 import com.dss.backend.config.SimulationProperties;
 
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-@Component
 public class MultiPaxos implements ConsensusAlgorithm {
 
     private final AppLogger appLogger = new DefaultAppLogger(MultiPaxos.class);
@@ -52,7 +51,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
     private Object committedValue = null;
 
     @Setter
-    private ScheduledExecutorService scheduler;
+    private Scheduler scheduler;
 
     // Add a setter to allow overriding the prepare timeout (default is 5000 ms)
     // Timeout handling

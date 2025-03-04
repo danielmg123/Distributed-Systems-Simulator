@@ -6,6 +6,7 @@ import java.util.concurrent.*;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.algorithm.failure.Heartbeat;
 import com.dss.backend.algorithm.failure.PhiAccrual;
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 import com.dss.backend.model.Node;
@@ -71,7 +72,7 @@ public class VirtualNodeThread extends Thread {
         return phiDetectors.computeIfAbsent(neighborId, id -> new PhiAccrual());
     }
 
-    public void startPhiChecker(ScheduledExecutorService scheduler) {
+    public void startPhiChecker(Scheduler scheduler) {
         phiCheckerFuture = scheduler.scheduleAtFixedRate(() -> {
             long now = System.currentTimeMillis();
             for (Map.Entry<String, PhiAccrual> entry : phiDetectors.entrySet()) {

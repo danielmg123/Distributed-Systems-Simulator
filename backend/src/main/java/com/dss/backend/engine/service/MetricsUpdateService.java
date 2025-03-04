@@ -1,5 +1,6 @@
 package com.dss.backend.engine.service;
 
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.metrics.PerformanceMetricsCollector;
 import com.dss.backend.controller.SimulationWebSocketController;
@@ -11,11 +12,11 @@ public class MetricsUpdateService {
 
     private final PerformanceMetricsCollector metricsCollector;
     private final SimulationWebSocketController webSocketController;
-    private final ScheduledExecutorService scheduler;
+    private final Scheduler scheduler;
 
     public MetricsUpdateService(PerformanceMetricsCollector metricsCollector,
                                 SimulationWebSocketController webSocketController,
-                                ScheduledExecutorService scheduler) {
+                                Scheduler scheduler) {
         this.metricsCollector = metricsCollector;
         this.webSocketController = webSocketController;
         this.scheduler = scheduler;

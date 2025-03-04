@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class MessageRouter {
+public class MessageRouter implements IMessageRouter{
 
     private final AppLogger appLogger = new DefaultAppLogger(MessageRouter.class);
 

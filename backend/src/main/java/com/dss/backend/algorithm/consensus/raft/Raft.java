@@ -19,7 +19,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * A more complete Raft example with basic log replication.
  * Does not include timer-based election logic.
  */
-@Component
 public class Raft implements ConsensusAlgorithm {
 
     private final AppLogger appLogger = new DefaultAppLogger(Raft.class);
@@ -62,9 +61,6 @@ public class Raft implements ConsensusAlgorithm {
 
     // For leader election, track how many votes we've gotten this term
     private final Map<Integer, Integer> votesReceivedPerTerm = new ConcurrentHashMap<>();
-
-    // Keep track of whether we are alive or just constructed
-    private boolean initialized = false;
 
     public Raft(String nodeId, List<String> allNodeIds, MessageRouter router) {
         this.myNodeId = nodeId;

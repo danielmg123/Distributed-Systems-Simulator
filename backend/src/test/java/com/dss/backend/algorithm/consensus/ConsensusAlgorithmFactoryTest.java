@@ -2,21 +2,29 @@ package com.dss.backend.algorithm.consensus;
 
 import com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm;
 import com.dss.backend.algorithm.consensus.raft.Raft;
+import com.dss.backend.engine.Scheduler;
+import com.dss.backend.engine.DefaultScheduler;
+import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.model.ConsensusAlgorithmType;
 import com.dss.backend.model.SimulationConfig;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.Collections;
+import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest
 public class ConsensusAlgorithmFactoryTest {
 
-    @Autowired
-    private ConsensusAlgorithmFactory factory; // Let Spring inject it
+    private ConsensusAlgorithmFactory factory;
+
+    @BeforeEach
+    public void setUp() {
+        MessageRouter router = new MessageRouter();
+        Scheduler scheduler = new DefaultScheduler(Executors.newSingleThreadScheduledExecutor());
+        factory = new ConsensusAlgorithmFactory(router, scheduler);
+    }
 
     @Test
     public void testFactoryReturnsPaxosByDefault() {

@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Component
 public class Zab implements ConsensusAlgorithm {
 
     private final AppLogger appLogger = new DefaultAppLogger(Zab.class);

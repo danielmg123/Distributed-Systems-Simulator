@@ -3,6 +3,7 @@ package com.dss.backend.algorithm.consensus.MultiPaxos;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.algorithm.consensus.multi_paxos.MultiPaxos;
 import com.dss.backend.algorithm.consensus.paxos.PaxosPayload;
+import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
@@ -30,7 +31,7 @@ public class MultiPaxosAdditionalTests {
         leader.setPrepareTimeoutMillis(10000);
         leader.setTotalNodes(3);
         leader.setMessageRouter(router);
-        leader.setScheduler(Executors.newSingleThreadScheduledExecutor());
+        leader.setScheduler(new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
 
         // Register dummy nodes for testing
         router.registerNode("node1", new DummyVirtualNode("node1"));
@@ -86,7 +87,7 @@ public class MultiPaxosAdditionalTests {
     static class DummyVirtualNode extends VirtualNode {
         public DummyVirtualNode(String nodeId) {
             super(createDummyNode(nodeId), new DummyConsensusAlgorithm(), new MessageRouter(),
-                    Executors.newSingleThreadExecutor(), Executors.newSingleThreadScheduledExecutor());
+                    Executors.newSingleThreadExecutor(), new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
             this.start();
         }
 

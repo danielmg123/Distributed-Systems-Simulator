@@ -4,6 +4,7 @@ import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithmFactory;
 import com.dss.backend.algorithm.failure.Heartbeat;
 import com.dss.backend.config.SimulationProperties;
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.VirtualNode;
 import com.dss.backend.model.Node;
@@ -17,7 +18,7 @@ import java.util.stream.Collectors;
 public class NodeInitializationService {
 
     private final MessageRouter messageRouter;
-    private final ScheduledExecutorService scheduler;
+    private final Scheduler scheduler;
     private final ConsensusAlgorithmFactory consensusFactory;
     private final SimulationProperties simulationProperties;
 
@@ -25,7 +26,7 @@ public class NodeInitializationService {
     private final ExecutorService workerPool;
 
     public NodeInitializationService(MessageRouter messageRouter,
-                                     ScheduledExecutorService scheduler,
+                                     Scheduler scheduler,
                                      ConsensusAlgorithmFactory consensusFactory,
                                      SimulationProperties simulationProperties) {
         this.messageRouter = messageRouter;

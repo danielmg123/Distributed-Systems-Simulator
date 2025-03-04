@@ -1,5 +1,7 @@
 package com.dss.backend.config;
 
+import com.dss.backend.engine.DefaultScheduler;
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -19,8 +21,9 @@ public class AppConfig {
     }
 
     @Bean
-    public ScheduledExecutorService scheduledExecutorService() {
-        return Executors.newScheduledThreadPool(simulationProperties.getSchedulerThreadPoolSize());
+    public Scheduler scheduler() {
+        ScheduledExecutorService service = Executors.newScheduledThreadPool(simulationProperties.getSchedulerThreadPoolSize());
+        return new DefaultScheduler(service);
     }
 
     @Bean

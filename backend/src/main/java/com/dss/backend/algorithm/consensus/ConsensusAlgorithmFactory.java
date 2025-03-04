@@ -2,26 +2,20 @@ package com.dss.backend.algorithm.consensus;
 
 import com.dss.backend.algorithm.consensus.view_stamped_replication.ViewStampedReplication;
 import com.dss.backend.algorithm.consensus.zab.Zab;
-import com.dss.backend.model.ConsensusAlgorithmType;
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.model.SimulationConfig;
 import com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm;
 import com.dss.backend.algorithm.consensus.raft.Raft;
 import com.dss.backend.algorithm.consensus.multi_paxos.MultiPaxos;
 import com.dss.backend.engine.concurrent.MessageRouter;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-
 import java.util.List;
-import java.util.concurrent.ScheduledExecutorService;
 
-@Component
 public class ConsensusAlgorithmFactory {
 
     private final MessageRouter router;
-    private final ScheduledExecutorService scheduler;
+    private final Scheduler scheduler;
 
-    @Autowired
-    public ConsensusAlgorithmFactory(MessageRouter router, ScheduledExecutorService scheduler) {
+    public ConsensusAlgorithmFactory(MessageRouter router, Scheduler scheduler) {
         this.router = router;
         this.scheduler = scheduler;
     }

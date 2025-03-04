@@ -6,6 +6,8 @@ import com.dss.backend.algorithm.failure.Heartbeat;
 import com.dss.backend.algorithm.failure.RingTopology;
 import com.dss.backend.controller.SimulationWebSocketController;
 import com.dss.backend.dto.EventDTO;
+import com.dss.backend.engine.DefaultScheduler;
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 import com.dss.backend.metrics.DefaultMetricsCollector;
@@ -36,8 +38,8 @@ public class SimulationEngine {
     // WebSocket Controller for real-time updates
     private final SimulationWebSocketController simulationWebSocketController;
 
-    // Centralized scheduler for simulation and per-node tasks
-    private final ScheduledExecutorService centralScheduler = Executors.newScheduledThreadPool(10);
+    private final Scheduler centralScheduler = new DefaultScheduler(Executors.newScheduledThreadPool(10));
+
     // Dedicated worker pool for processing VirtualNode messages
     private final ExecutorService workerPool = Executors.newFixedThreadPool(10);
     private final Random random = new Random();

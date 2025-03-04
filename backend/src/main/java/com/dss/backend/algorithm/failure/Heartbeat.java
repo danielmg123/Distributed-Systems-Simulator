@@ -1,5 +1,6 @@
 package com.dss.backend.algorithm.failure;
 
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.engine.concurrent.MessageType;
@@ -21,7 +22,7 @@ public class Heartbeat implements HeartbeatService {
 
     // Schedule heartbeat tasks on the provided central scheduler.
     @Override
-    public void start(ScheduledExecutorService scheduler) {
+    public void start(Scheduler scheduler) {
         heartbeatFuture = scheduler.scheduleAtFixedRate(() -> {
             for (String targetId : router.getRegisteredNodeIds()) {
                 if (!targetId.equals(nodeId)) {
