@@ -12,7 +12,4 @@ public class Node {
     private String id;
     private String address;
     private NodeStatus status;
-    // Additional properties...
-
-    // Constructors, getters, and setters...
 }
