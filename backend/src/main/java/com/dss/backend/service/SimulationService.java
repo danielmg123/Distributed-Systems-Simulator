@@ -89,7 +89,7 @@ public class SimulationService {
         MessageRouter router = new MessageRouter();
 
         // 4. Instantiate services using injected scheduler and properties.
-        ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(router, scheduler);
+        ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(router, scheduler, simulationProperties);
         NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler, consensusFactory, simulationProperties);
         MetricsUpdateService metricsUpdateService = new MetricsUpdateService(metricsCollector, simulationWebSocketController, scheduler);
         EventLoggerService eventLoggerService = new EventLoggerService(simulationWebSocketController);

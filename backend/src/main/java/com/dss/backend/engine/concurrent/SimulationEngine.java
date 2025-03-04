@@ -4,6 +4,7 @@ import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithmFactory;
 import com.dss.backend.algorithm.failure.Heartbeat;
 import com.dss.backend.algorithm.failure.RingTopology;
+import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.controller.SimulationWebSocketController;
 import com.dss.backend.dto.EventDTO;
 import com.dss.backend.engine.DefaultScheduler;
@@ -67,7 +68,8 @@ public class SimulationEngine {
                 .collect(Collectors.toList());
 
         // Create a ConsensusAlgorithmFactory with the shared messageRouter and scheduler.
-        ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(messageRouter, centralScheduler);
+        SimulationProperties simulationProperties = new SimulationProperties();
+        ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(messageRouter, centralScheduler, simulationProperties);
 
         for (Node node : nodes) {
             String nodeId = node.getId();

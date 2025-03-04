@@ -2,6 +2,7 @@ package com.dss.backend.algorithm.consensus;
 
 import com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm;
 import com.dss.backend.algorithm.consensus.raft.Raft;
+import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.engine.concurrent.MessageRouter;
@@ -23,7 +24,9 @@ public class ConsensusAlgorithmFactoryTest {
     public void setUp() {
         MessageRouter router = new MessageRouter();
         Scheduler scheduler = new DefaultScheduler(Executors.newSingleThreadScheduledExecutor());
-        factory = new ConsensusAlgorithmFactory(router, scheduler);
+        SimulationProperties simulationProperties = new SimulationProperties();
+        factory = new ConsensusAlgorithmFactory(router, scheduler, simulationProperties);
+
     }
 
     @Test

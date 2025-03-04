@@ -3,6 +3,7 @@ package com.dss.backend.algorithm.consensus.MultiPaxos;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.algorithm.consensus.multi_paxos.MultiPaxos;
 import com.dss.backend.algorithm.consensus.paxos.PaxosPayload;
+import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
@@ -25,13 +26,14 @@ public class MultiPaxosAdditionalTests {
     @BeforeEach
     public void setUp() {
         router = new MessageRouter();
-        leader = new MultiPaxos();
+        // Create a dummy SimulationProperties for testing
+        SimulationProperties props = new SimulationProperties();
+        props.setMultipaxosPrepareTimeoutMillis(10000);
+        props.setMultipaxosQuorum(0); // Use default quorum calculation
+
+        leader = new MultiPaxos(router, props, new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
         leader.setLeader(true);
-        // Set the prepare timeout to 10 seconds (10000 ms) for testing purposes.
-        leader.setPrepareTimeoutMillis(10000);
         leader.setTotalNodes(3);
-        leader.setMessageRouter(router);
-        leader.setScheduler(new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
 
         // Register dummy nodes for testing
         router.registerNode("node1", new DummyVirtualNode("node1"));

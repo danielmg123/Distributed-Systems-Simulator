@@ -2,6 +2,7 @@ package com.dss.backend.algorithm.consensus;
 
 import com.dss.backend.algorithm.consensus.view_stamped_replication.ViewStampedReplication;
 import com.dss.backend.algorithm.consensus.zab.Zab;
+import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.model.SimulationConfig;
 import com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm;
@@ -14,10 +15,19 @@ public class ConsensusAlgorithmFactory {
 
     private final MessageRouter router;
     private final Scheduler scheduler;
+    private final SimulationProperties simulationProperties;
 
-    public ConsensusAlgorithmFactory(MessageRouter router, Scheduler scheduler) {
+    /**
+     * Constructs a ConsensusAlgorithmFactory with the given dependencies.
+     *
+     * @param router                The shared MessageRouter.
+     * @param scheduler             The Scheduler abstraction.
+     * @param simulationProperties  The SimulationProperties for configuration.
+     */
+    public ConsensusAlgorithmFactory(MessageRouter router, Scheduler scheduler, SimulationProperties simulationProperties) {
         this.router = router;
         this.scheduler = scheduler;
+        this.simulationProperties = simulationProperties;
     }
 
     /**
@@ -40,11 +50,9 @@ public class ConsensusAlgorithmFactory {
             case RAFT:
                 return new Raft(nodeId, allNodeIds, router);
             case MULTI_PAXOS:
-                MultiPaxos multiPaxos = new MultiPaxos();
-                multiPaxos.setMessageRouter(router);
+                MultiPaxos multiPaxos = new MultiPaxos(router, simulationProperties, scheduler);
                 multiPaxos.setTotalNodes(allNodeIds.size());
                 multiPaxos.setLeader(allNodeIds.get(0).equals(nodeId));
-                multiPaxos.setScheduler(scheduler);
                 return multiPaxos;
             case VIEW_STAMPED_REPLICATION:
                 ViewStampedReplication vsr = new ViewStampedReplication();
