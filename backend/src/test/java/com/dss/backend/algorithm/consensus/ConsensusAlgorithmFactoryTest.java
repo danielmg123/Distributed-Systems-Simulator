@@ -1,11 +1,13 @@
 package com.dss.backend.algorithm.consensus;
 
-import com.dss.backend.algorithm.consensus.paxos.PaxosAlgorithm;
-import com.dss.backend.algorithm.consensus.raft.Raft;
+import com.dss.backend.consensus.ConsensusAlgorithm;
+import com.dss.backend.consensus.ConsensusAlgorithmFactory;
+import com.dss.backend.consensus.paxos.PaxosAlgorithm;
+import com.dss.backend.consensus.raft.Raft;
 import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.engine.DefaultScheduler;
-import com.dss.backend.engine.concurrent.MessageRouter;
+import com.dss.backend.messaging.MessageRouter;
 import com.dss.backend.model.ConsensusAlgorithmType;
 import com.dss.backend.model.SimulationConfig;
 import org.junit.jupiter.api.BeforeEach;

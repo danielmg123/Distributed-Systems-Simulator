@@ -2,7 +2,7 @@ package com.dss.backend.config;
 
 import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.engine.Scheduler;
-import com.dss.backend.engine.concurrent.MessageRouter;
+import com.dss.backend.messaging.MessageRouter;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

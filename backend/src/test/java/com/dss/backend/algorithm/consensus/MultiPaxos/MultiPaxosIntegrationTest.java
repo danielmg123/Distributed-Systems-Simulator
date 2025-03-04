@@ -1,13 +1,14 @@
 package com.dss.backend.algorithm.consensus.MultiPaxos;
 
-import com.dss.backend.algorithm.consensus.multi_paxos.MultiPaxos;
-import com.dss.backend.algorithm.consensus.paxos.PaxosPayload;
+import com.dss.backend.consensus.ConsensusAlgorithm;
+import com.dss.backend.consensus.multi_paxos.MultiPaxos;
+import com.dss.backend.consensus.paxos.PaxosPayload;
 import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.DefaultScheduler;
-import com.dss.backend.engine.concurrent.MessageRouter;
-import com.dss.backend.engine.concurrent.MessageType;
-import com.dss.backend.engine.concurrent.SimulationMessage;
-import com.dss.backend.engine.concurrent.VirtualNode;
+import com.dss.backend.messaging.MessageRouter;
+import com.dss.backend.messaging.MessageType;
+import com.dss.backend.messaging.SimulationMessage;
+import com.dss.backend.messaging.VirtualNode;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,7 +93,7 @@ public class MultiPaxosIntegrationTest {
         }
     }
 
-    static class DummyConsensusAlgorithm implements com.dss.backend.algorithm.consensus.ConsensusAlgorithm {
+    static class DummyConsensusAlgorithm implements ConsensusAlgorithm {
         @Override
         public void propose(Object value) { }
         @Override
