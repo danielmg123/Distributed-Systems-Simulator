@@ -174,8 +174,8 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
         payload.setProposedValue(value);
 
         for (String nodeId : allNodeIds) {
-            SimulationMessage promiseMsg = SimulationMessageFactory.createMessage(myNodeId, nodeId, MessageType.PROMISE, payload);
-            router.messageSent(promiseMsg);
+            SimulationMessage acceptRequestMsg = SimulationMessageFactory.createMessage(myNodeId, nodeId, MessageType.ACCEPT_REQUEST, payload);
+            router.messageSent(acceptRequestMsg);
         }
     }
 
