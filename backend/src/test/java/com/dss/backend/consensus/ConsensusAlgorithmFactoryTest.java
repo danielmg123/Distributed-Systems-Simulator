@@ -1,7 +1,5 @@
-package com.dss.backend.algorithm.consensus;
+package com.dss.backend.consensus;
 
-import com.dss.backend.consensus.ConsensusAlgorithm;
-import com.dss.backend.consensus.ConsensusAlgorithmFactory;
 import com.dss.backend.consensus.paxos.PaxosAlgorithm;
 import com.dss.backend.consensus.raft.Raft;
 import com.dss.backend.config.SimulationProperties;

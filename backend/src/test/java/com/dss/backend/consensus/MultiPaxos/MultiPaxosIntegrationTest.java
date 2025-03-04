@@ -1,4 +1,4 @@
-package com.dss.backend.algorithm.consensus.MultiPaxos;
+package com.dss.backend.consensus.MultiPaxos;
 
 import com.dss.backend.consensus.ConsensusAlgorithm;
 import com.dss.backend.consensus.multi_paxos.MultiPaxos;
@@ -18,7 +18,7 @@ import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class MultiPaxosAdditionalTests {
+public class MultiPaxosIntegrationTest {
 
     private MultiPaxos leader;
     private MessageRouter router;
@@ -34,34 +34,27 @@ public class MultiPaxosAdditionalTests {
         leader = new MultiPaxos(router, props, new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
         leader.setLeader(true);
         leader.setTotalNodes(3);
-
-        // Register dummy nodes for testing
+        // Register three dummy nodes as VirtualNode instances.
         router.registerNode("node1", new DummyVirtualNode("node1"));
         router.registerNode("node2", new DummyVirtualNode("node2"));
         router.registerNode("node3", new DummyVirtualNode("node3"));
     }
 
     @Test
-    public void testConflictingProposals() throws InterruptedException {
-        leader.propose("value1");
-        int currentProposal = leader.getCurrentProposalNumber();
+    public void testFullPrepareAndAcceptFlow() throws InterruptedException {
+        String proposedValue = "testValue";
+        leader.propose(proposedValue);
 
-        // Simulate promise responses from two nodes with conflicting accepted proposals.
-        PaxosPayload promise1 = new PaxosPayload();
-        promise1.setProposalNumber(currentProposal);
-        promise1.setAcceptedId(10);
-        promise1.setAcceptedValue("value2");
+        PaxosPayload promisePayload = new PaxosPayload();
+        promisePayload.setProposalNumber(leader.getCurrentProposalNumber());
+        promisePayload.setAcceptedId(-1);
+        promisePayload.setAcceptedValue(null);
 
-        PaxosPayload promise2 = new PaxosPayload();
-        promise2.setProposalNumber(currentProposal);
-        promise2.setAcceptedId(-1);
-        promise2.setAcceptedValue(null);
+        // Simulate receiving PROMISE messages from node1 and node2.
+        leader.handleMessage(new SimulationMessage("node1", "self", MessageType.PROMISE, promisePayload));
+        leader.handleMessage(new SimulationMessage("node2", "self", MessageType.PROMISE, promisePayload));
 
-        // Process promise responses
-        leader.handleMessage(new SimulationMessage("node1", "self", MessageType.PROMISE, promise1));
-        leader.handleMessage(new SimulationMessage("node2", "self", MessageType.PROMISE, promise2));
-
-        // Wait until preparePhaseCompleted becomes true (or timeout after 5 seconds)
+        // Wait until the prepare phase is completed
         boolean prepareCompleted = false;
         for (int i = 0; i < 50; i++) {
             if (leader.isPreparePhaseCompleted()) {
@@ -70,18 +63,17 @@ public class MultiPaxosAdditionalTests {
             }
             Thread.sleep(100);
         }
-        assertTrue(prepareCompleted, "Prepare phase should complete after quorum is reached");
+        assertTrue(prepareCompleted, "Prepare phase should be completed after quorum is reached.");
 
-        // Now simulate ACCEPTED responses
         PaxosPayload acceptedPayload = new PaxosPayload();
-        acceptedPayload.setProposalNumber(currentProposal);
-        acceptedPayload.setProposedValue("value2");
+        acceptedPayload.setProposalNumber(leader.getCurrentProposalNumber());
+        acceptedPayload.setProposedValue(proposedValue);
 
+        // Simulate receiving ACCEPTED messages.
         leader.handleMessage(new SimulationMessage("node1", "self", MessageType.ACCEPTED, acceptedPayload));
         leader.handleMessage(new SimulationMessage("node2", "self", MessageType.ACCEPTED, acceptedPayload));
 
-        // Verify that the committed value matches the highest accepted value from the promises.
-        assertEquals("value2", leader.getCommittedValue(), "Committed value should match the highest accepted proposal from promises");
+        assertEquals(proposedValue, leader.getCommittedValue(), "Committed value should match the proposed value.");
     }
 
     // Dummy implementations for testing
