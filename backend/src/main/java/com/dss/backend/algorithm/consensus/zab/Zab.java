@@ -5,9 +5,9 @@ import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
+import com.dss.backend.logging.AppLogger;
+import com.dss.backend.logging.DefaultAppLogger;
 import lombok.Setter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class Zab implements ConsensusAlgorithm {
 
-    private static final Logger logger = LoggerFactory.getLogger(Zab.class);
+    private final AppLogger appLogger = new DefaultAppLogger(Zab.class);
 
     private MessageRouter router;
     @Setter
@@ -53,7 +53,7 @@ public class Zab implements ConsensusAlgorithm {
     @Override
     public void propose(Object value) {
         if (!isLeader) {
-            logger.info("Node {} is not leader. Forward proposal to leader.", nodeId);
+            appLogger.info("Node {} is not leader. Forward proposal to leader.", nodeId);
             return;
         }
         currentZxid++;
@@ -63,7 +63,7 @@ public class Zab implements ConsensusAlgorithm {
         ZabPayload payload = new ZabPayload(MessageType.PROPOSAL, zxid, value);
         // Use the broadcaster to send the proposal.
         broadcaster.broadcast(MessageType.PROPOSAL, payload);
-        logger.info("Leader {} proposed value '{}' with zxid {}", nodeId, value, zxid);
+        appLogger.info("Leader {} proposed value '{}' with zxid {}", nodeId, value, zxid);
     }
 
     @Override
@@ -75,13 +75,13 @@ public class Zab implements ConsensusAlgorithm {
     @Override
     public void commit(Object value) {
         committedValue = value;
-        logger.info("Node {} committed value: {}", nodeId, value);
+        appLogger.info("Node {} committed value: {}", nodeId, value);
     }
 
     @Override
     public void handleMessage(SimulationMessage msg) {
         if (!(msg.getPayload() instanceof ZabPayload)) {
-            logger.info("Node {} received unsupported payload: {}", nodeId, msg.getPayload());
+            appLogger.info("Node {} received unsupported payload: {}", nodeId, msg.getPayload());
             return;
         }
         ZabPayload payload = (ZabPayload) msg.getPayload();
@@ -96,7 +96,7 @@ public class Zab implements ConsensusAlgorithm {
                 handleCommit(msg.getSourceNodeId(), payload);
                 break;
             default:
-                logger.info("Node {} received unknown Zab message type: {}", nodeId, payload.getType());
+                appLogger.info("Node {} received unknown Zab message type: {}", nodeId, payload.getType());
         }
     }
 
@@ -108,16 +108,16 @@ public class Zab implements ConsensusAlgorithm {
      */
     private void handlePropose(String sourceNodeId, ZabPayload payload) {
         if (isLeader) {
-            logger.info("Leader {} received PROPOSE unexpectedly.", nodeId);
+            appLogger.info("Leader {} received PROPOSE unexpectedly.", nodeId);
             return;
         }
         long zxid = payload.getZxid();
         Object value = payload.getProposedValue();
-        logger.info("Node {} received PROPOSE with zxid {} and value '{}' from {}", nodeId, zxid, value, sourceNodeId);
+        appLogger.info("Node {} received PROPOSE with zxid {} and value '{}' from {}", nodeId, zxid, value, sourceNodeId);
         ZabPayload ackPayload = new ZabPayload(MessageType.ACK, zxid, value);
         SimulationMessage ackMsg = new SimulationMessage(nodeId, sourceNodeId, MessageType.ACK, ackPayload);
         router.messageSent(ackMsg);
-        logger.info("Node {} sent ACK for zxid {} to {}", nodeId, zxid, sourceNodeId);
+        appLogger.info("Node {} sent ACK for zxid {} to {}", nodeId, zxid, sourceNodeId);
     }
 
     /**
@@ -126,17 +126,17 @@ public class Zab implements ConsensusAlgorithm {
      */
     private void handleAck(String sourceNodeId, ZabPayload payload) {
         if (!isLeader) {
-            logger.info("Non-leader {} received ACK; ignoring.", nodeId);
+            appLogger.info("Non-leader {} received ACK; ignoring.", nodeId);
             return;
         }
         long zxid = payload.getZxid();
         if (!pendingProposals.containsKey(zxid)) {
-            logger.info("Leader {} received ACK for unknown zxid {}", nodeId, zxid);
+            appLogger.info("Leader {} received ACK for unknown zxid {}", nodeId, zxid);
             return;
         }
         int count = ackCounts.get(zxid) + 1;
         ackCounts.put(zxid, count);
-        logger.info("Leader {} received ACK from {} for zxid {} (ack count = {})", nodeId, sourceNodeId, zxid, count);
+        appLogger.info("Leader {} received ACK from {} for zxid {} (ack count = {})", nodeId, sourceNodeId, zxid, count);
         if (count >= ((totalNodes / 2) + 1)) {
             Object value = pendingProposals.get(zxid);
             ZabPayload commitPayload = new ZabPayload(MessageType.COMMIT, zxid, value);
@@ -153,7 +153,7 @@ public class Zab implements ConsensusAlgorithm {
     private void handleCommit(String sourceNodeId, ZabPayload payload) {
         long zxid = payload.getZxid();
         Object value = payload.getProposedValue();
-        logger.info("Node {} received COMMIT for zxid {} with value '{}' from {}", nodeId, zxid, value, sourceNodeId);
+        appLogger.info("Node {} received COMMIT for zxid {} with value '{}' from {}", nodeId, zxid, value, sourceNodeId);
         commit(value);
     }
 }

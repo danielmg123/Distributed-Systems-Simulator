@@ -10,8 +10,8 @@ import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessageFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.dss.backend.logging.AppLogger;
+import com.dss.backend.logging.DefaultAppLogger;
 
 /**
  * Paxos implementation that merges information from all PROMISEs:
@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory;
  */
 public class PaxosAlgorithm implements ConsensusAlgorithm {
 
-    private static final Logger logger = LoggerFactory.getLogger(PaxosAlgorithm.class);
+    private final AppLogger appLogger = new DefaultAppLogger(PaxosAlgorithm.class);
 
     // Tracks per-node Paxos status (promisedId, acceptedId, etc.)
     private final PaxosState paxosState;
@@ -76,7 +76,7 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
     public void commit(Object value) {
         // Mark the chosen value in local state
         paxosState.setChosenValue(value);
-        logger.info("Node {} has COMMITTED value: {}", myNodeId, value);
+        appLogger.info("Node {} has COMMITTED value: {}", myNodeId, value);
 
         // Optionally broadcast a final "CHOSEN" or "COMMIT" message 
         // so other nodes can learn the result.
@@ -151,7 +151,7 @@ public class PaxosAlgorithm implements ConsensusAlgorithm {
         // Update the highest accepted proposal if applicable
         state.updateHighestAccepted(payload.getAcceptedId(), payload.getAcceptedValue());
 
-        logger.info("Received PROMISE from {} for proposal #{} (count = {})",
+        appLogger.info("Received PROMISE from {} for proposal #{} (count = {})",
                 sourceNodeId, proposalNumber, state.getPromiseCount());
 
         // If quorum is reached, decide on the value and move to the accept phase.

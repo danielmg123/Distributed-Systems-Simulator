@@ -2,6 +2,8 @@ package com.dss.backend.service;
 
 import com.dss.backend.controller.SimulationWebSocketController;
 import com.dss.backend.exception.ResourceNotFoundException;
+import com.dss.backend.logging.AppLogger;
+import com.dss.backend.logging.DefaultAppLogger;
 import com.dss.backend.model.Event;
 import com.dss.backend.model.EventType;
 import com.dss.backend.model.Node;
@@ -20,8 +22,6 @@ import com.dss.backend.metrics.DefaultMetricsCollector;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.metrics.PerformanceMetricsCollector;
 import com.dss.backend.config.SimulationProperties;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
@@ -32,7 +32,7 @@ import java.util.concurrent.*;
 @Service
 public class SimulationService {
 
-    private static final Logger logger = LoggerFactory.getLogger(SimulationService.class);
+    private final AppLogger appLogger = new DefaultAppLogger(SimulationService.class);
 
     @Autowired
     private SimulationRepository simulationRepository;
@@ -111,7 +111,7 @@ public class SimulationService {
         // 8. Compute and log topology mapping if applicable.
         if (simulation.getConfig() != null && simulation.getConfig().getTopologyType() != null) {
             Map<String, List<String>> neighborMapping = orchestrator.computeTopologyMapping(nodes, simulation.getConfig().getTopologyType());
-            logger.info("Computed neighbor mapping: {}", neighborMapping);
+            appLogger.info("Computed neighbor mapping: {}", neighborMapping);
         }
 
         // 9. Update simulation status to RUNNING.
@@ -135,7 +135,7 @@ public class SimulationService {
             if (failurePercentage > 0) {
                 // Here we use a fixed interval (5000 ms) but this could be externalized as well.
                 orchestrator.startFailureSimulation(simulationId, failurePercentage, 5000);
-                logger.info("Started failure simulation with {}% failure rate.", failurePercentage);
+                appLogger.info("Started failure simulation with {}% failure rate.", failurePercentage);
 
                 Event failureEvent = new Event();
                 failureEvent.setType(EventType.FAILURE_SIMULATION_STARTED);

@@ -3,11 +3,11 @@ package com.dss.backend.algorithm.consensus.multi_paxos;
 import com.dss.backend.algorithm.consensus.paxos.ProposerState;
 import com.dss.backend.algorithm.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.engine.concurrent.SimulationMessageFactory;
+import com.dss.backend.logging.AppLogger;
+import com.dss.backend.logging.DefaultAppLogger;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.Setter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
@@ -17,14 +17,13 @@ import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.algorithm.consensus.paxos.PaxosPayload;
 import com.dss.backend.config.SimulationProperties;
 
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 @Component
 public class MultiPaxos implements ConsensusAlgorithm {
 
-    private static final Logger logger = LoggerFactory.getLogger(MultiPaxos.class);
+    private final AppLogger appLogger = new DefaultAppLogger(MultiPaxos.class);
 
     private MessageRouter router;
     private ConsensusBroadcaster broadcaster;
@@ -120,14 +119,14 @@ public class MultiPaxos implements ConsensusAlgorithm {
                 broadcastAcceptRequest(currentProposalNumber, value);
             }
         } else {
-            logger.info("Node is not leader. It must forward proposals to the leader.");
+            appLogger.info("Node is not leader. It must forward proposals to the leader.");
         }
     }
 
     private void resetPreparePhase() {
         preparePhaseCompleted = false;
         proposerState = null;
-        logger.info("Resetting prepare phase for proposal #{}", currentProposalNumber);
+        appLogger.info("Resetting prepare phase for proposal #{}", currentProposalNumber);
     }
 
 
@@ -143,10 +142,10 @@ public class MultiPaxos implements ConsensusAlgorithm {
             promisedId = proposalNumber;
             acceptedId = proposalNumber;
             acceptedValue = payload.getProposedValue();
-            logger.info("Node accepted proposal #{} with value: {}", proposalNumber, acceptedValue);
+            appLogger.info("Node accepted proposal #{} with value: {}", proposalNumber, acceptedValue);
             return true;
         }
-        logger.info("Node rejected proposal #{} (promisedId = {})", proposalNumber, promisedId);
+        appLogger.info("Node rejected proposal #{} (promisedId = {})", proposalNumber, promisedId);
         return false;
     }
 
@@ -157,7 +156,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
     @Override
     public void commit(Object value) {
         committedValue = value;
-        logger.info("MultiPaxos committed value: {}", value);
+        appLogger.info("MultiPaxos committed value: {}", value);
         broadcastCommit(currentProposalNumber, value);
     }
 
@@ -185,7 +184,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
                 onCommit(msg.getSourceNodeId(), payload);
                 break;
             default:
-                logger.warn("MultiPaxos: Unhandled message type: {}", type);
+                appLogger.debug("MultiPaxos: Unhandled message type: {}", type);
                 break;
         }
     }
@@ -235,9 +234,9 @@ public class MultiPaxos implements ConsensusAlgorithm {
             SimulationMessage msg = SimulationMessageFactory.createMessage("self", sourceNodeId, MessageType.PROMISE, payload);
             router.messageSent(msg);
 
-            logger.info("Sent PROMISE for proposal #{} to {}", proposalNumber, sourceNodeId);
+            appLogger.info("Sent PROMISE for proposal #{} to {}", proposalNumber, sourceNodeId);
         } else {
-            logger.info("Ignored PREPARE_REQUEST for proposal #{} because promisedId is {}", proposalNumber, promisedId);
+            appLogger.info("Ignored PREPARE_REQUEST for proposal #{} because promisedId is {}", proposalNumber, promisedId);
         }
     }
 
@@ -258,13 +257,13 @@ public class MultiPaxos implements ConsensusAlgorithm {
         }
         proposerState.incrementPromiseCount();
         proposerState.updateHighestAccepted(payload.getAcceptedId(), payload.getAcceptedValue());
-        logger.info("Received PROMISE from {} for proposal #{} (count = {})", sourceNodeId, proposalNumber, proposerState.getPromiseCount());
+        appLogger.info("Received PROMISE from {} for proposal #{} (count = {})", sourceNodeId, proposalNumber, proposerState.getPromiseCount());
         if (proposerState.getPromiseCount() >= quorum) {
             Object valueToAccept = (proposerState.getHighestAcceptedValue() != null)
                     ? proposerState.getHighestAcceptedValue()
                     : proposerState.getOriginalValue();
             preparePhaseCompleted = true;
-            logger.info("Prepare phase complete with quorum reached. Moving to accept phase with value: {}", valueToAccept);
+            appLogger.info("Prepare phase complete with quorum reached. Moving to accept phase with value: {}", valueToAccept);
             broadcastAcceptRequest(currentProposalNumber, valueToAccept);
         }
 
@@ -286,9 +285,9 @@ public class MultiPaxos implements ConsensusAlgorithm {
             response.setProposedValue(acceptedValue);
             SimulationMessage msg = SimulationMessageFactory.createMessage("self", sourceNodeId, MessageType.ACCEPTED, payload);
             router.messageSent(msg);
-            logger.info("Accepted proposal #{} from {}", proposalNumber, sourceNodeId);
+            appLogger.info("Accepted proposal #{} from {}", proposalNumber, sourceNodeId);
         } else {
-            logger.info("Rejected ACCEPT_REQUEST for proposal #{} (promisedId = {})", proposalNumber, promisedId);
+            appLogger.info("Rejected ACCEPT_REQUEST for proposal #{} (promisedId = {})", proposalNumber, promisedId);
         }
     }
 
@@ -306,10 +305,10 @@ public class MultiPaxos implements ConsensusAlgorithm {
             return; // Ignore responses for old proposals.
         }
         acceptResponseCount++;
-        logger.info("Received ACCEPTED from {} for proposal #{} (count = {})", sourceNodeId, proposalNumber, acceptResponseCount);
+        appLogger.info("Received ACCEPTED from {} for proposal #{} (count = {})", sourceNodeId, proposalNumber, acceptResponseCount);
         if (acceptResponseCount >= quorum) {
             Object valueToCommit = payload.getProposedValue();
-            logger.info("Quorum reached on ACCEPTED responses. Committing value: {}", valueToCommit);
+            appLogger.info("Quorum reached on ACCEPTED responses. Committing value: {}", valueToCommit);
             commit(valueToCommit);
         }
     }
@@ -320,7 +319,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
      */
     private void onCommit(String sourceNodeId, PaxosPayload payload) {
         committedValue = payload.getProposedValue();
-        logger.info("Node received COMMIT from {} for proposal #{} with value: {}", sourceNodeId, payload.getProposalNumber(), committedValue);
+        appLogger.info("Node received COMMIT from {} for proposal #{} with value: {}", sourceNodeId, payload.getProposalNumber(), committedValue);
         // Optionally, reset preparePhaseCompleted for the next proposal if needed.
     }
 }

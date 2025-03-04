@@ -6,16 +6,16 @@ import com.dss.backend.engine.concurrent.MessageRouter;
 import com.dss.backend.engine.concurrent.MessageType;
 import com.dss.backend.engine.concurrent.SimulationMessage;
 import com.dss.backend.engine.concurrent.SimulationMessageFactory;
+import com.dss.backend.logging.AppLogger;
+import com.dss.backend.logging.DefaultAppLogger;
 import lombok.Setter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ViewStampedReplication implements ConsensusAlgorithm {
 
-    private static final Logger logger = LoggerFactory.getLogger(ViewStampedReplication.class);
+    private final AppLogger appLogger = new DefaultAppLogger(ViewStampedReplication.class);
 
     // Current view (for simplicity, starts at 0)
     private int view = 0;
@@ -60,7 +60,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
     @Override
     public void propose(Object value) {
         if (!isPrimary) {
-            logger.info("Non-primary node {} cannot initiate proposal; forward to primary.", nodeId);
+            appLogger.info("Non-primary node {} cannot initiate proposal; forward to primary.", nodeId);
             return;
         }
         opNum++;
@@ -69,7 +69,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
         VsrPayload payload = new VsrPayload(MessageType.PREPARE, view, opNum, value);
         // Use the broadcaster to send the PREPARE message.
         broadcaster.broadcast(MessageType.PREPARE, payload);
-        logger.info("Primary {} initiated PREPARE for op #{} with value: {}", nodeId, opNum, value);
+        appLogger.info("Primary {} initiated PREPARE for op #{} with value: {}", nodeId, opNum, value);
     }
 
     /**
@@ -86,7 +86,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
     @Override
     public void commit(Object value) {
         committedOpNum++;
-        logger.info("Node {} commits op #{} with value: {}", nodeId, committedOpNum, value);
+        appLogger.info("Node {} commits op #{} with value: {}", nodeId, committedOpNum, value);
     }
 
     /**
@@ -98,7 +98,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
     @Override
     public void handleMessage(SimulationMessage msg) {
         if (!(msg.getPayload() instanceof VsrPayload)) {
-            logger.info("Node {} received an unsupported payload: {}", nodeId, msg.getPayload());
+            appLogger.info("Node {} received an unsupported payload: {}", nodeId, msg.getPayload());
             return;
         }
         VsrPayload payload = (VsrPayload) msg.getPayload();
@@ -113,7 +113,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
                 handleCommit(msg.getSourceNodeId(), payload);
                 break;
             default:
-                logger.info("Node {} received unknown VSR message type: {}", nodeId, payload.getType());
+                appLogger.info("Node {} received unknown VSR message type: {}", nodeId, payload.getType());
         }
     }
 
@@ -125,17 +125,17 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
      */
     private void handlePrepare(String sourceNodeId, VsrPayload payload) {
         if (payload.getView() != view) {
-            logger.info("Node {} ignoring PREPARE with mismatched view {}", nodeId, payload.getView());
+            appLogger.info("Node {} ignoring PREPARE with mismatched view {}", nodeId, payload.getView());
             return;
         }
         int receivedOp = payload.getOpNum();
         Object proposedValue = payload.getProposedValue();
-        logger.info("Node {} received PREPARE for op #{} with value: {} from {}", nodeId, receivedOp, proposedValue, sourceNodeId);
+        appLogger.info("Node {} received PREPARE for op #{} with value: {} from {}", nodeId, receivedOp, proposedValue, sourceNodeId);
         // Reply with a PREPARE_RESPONSE.
         VsrPayload response = new VsrPayload(MessageType.PREPARE_RESPONSE, view, receivedOp, proposedValue);
         SimulationMessage responseMsg = SimulationMessageFactory.createMessage(nodeId, sourceNodeId, MessageType.PREPARE_RESPONSE, response);
         messageRouter.messageSent(responseMsg);
-        logger.info("Node {} sent PREPARE_RESPONSE for op #{} to {}", nodeId, receivedOp, sourceNodeId);
+        appLogger.info("Node {} sent PREPARE_RESPONSE for op #{} to {}", nodeId, receivedOp, sourceNodeId);
     }
 
     /**
@@ -144,22 +144,22 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
      */
     private void handlePrepareResponse(String sourceNodeId, VsrPayload payload) {
         if (!isPrimary) {
-            logger.info("Non-primary node {} received PREPARE_RESPONSE; ignoring.", nodeId);
+            appLogger.info("Non-primary node {} received PREPARE_RESPONSE; ignoring.", nodeId);
             return;
         }
         if (payload.getView() != view) {
-            logger.info("Primary {} ignoring PREPARE_RESPONSE with mismatched view {}", nodeId, payload.getView());
+            appLogger.info("Primary {} ignoring PREPARE_RESPONSE with mismatched view {}", nodeId, payload.getView());
             return;
         }
         int responseOp = payload.getOpNum();
         if (!pendingOps.containsKey(responseOp)) {
-            logger.info("Primary {} received PREPARE_RESPONSE for unknown op #{}", nodeId, responseOp);
+            appLogger.info("Primary {} received PREPARE_RESPONSE for unknown op #{}", nodeId, responseOp);
             return;
         }
 
         int count = ackCount.getOrDefault(responseOp, 0) + 1;
         ackCount.put(responseOp, count);
-        logger.info("Primary {} received PREPARE_RESPONSE for op #{} from {} (ack count = {})", nodeId, responseOp, sourceNodeId, count);
+        appLogger.info("Primary {} received PREPARE_RESPONSE for op #{} from {} (ack count = {})", nodeId, responseOp, sourceNodeId, count);
 
         // Define quorum as ⌊totalNodes/2⌋ + 1.
         int quorum = (totalNodes / 2) + 1;
@@ -184,12 +184,12 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
      */
     private void handleCommit(String sourceNodeId, VsrPayload payload) {
         if (payload.getView() != view) {
-            logger.info("Node {} ignoring COMMIT with mismatched view {}", nodeId, payload.getView());
+            appLogger.info("Node {} ignoring COMMIT with mismatched view {}", nodeId, payload.getView());
             return;
         }
         int commitOp = payload.getOpNum();
         if (commitOp <= committedOpNum) {
-            logger.info("Node {} already committed op #{}, ignoring COMMIT for op #{}", nodeId, committedOpNum, commitOp);
+            appLogger.info("Node {} already committed op #{}, ignoring COMMIT for op #{}", nodeId, committedOpNum, commitOp);
             return;
         }
         Object value = payload.getProposedValue();

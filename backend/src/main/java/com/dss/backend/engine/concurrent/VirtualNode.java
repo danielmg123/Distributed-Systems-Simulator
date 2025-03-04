@@ -6,16 +6,16 @@ import java.util.concurrent.*;
 import com.dss.backend.algorithm.consensus.ConsensusAlgorithm;
 import com.dss.backend.algorithm.failure.Heartbeat;
 import com.dss.backend.algorithm.failure.PhiAccrual;
+import com.dss.backend.logging.AppLogger;
+import com.dss.backend.logging.DefaultAppLogger;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
 import lombok.Getter;
 import lombok.Setter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class VirtualNode {
 
-    private static final Logger logger = LoggerFactory.getLogger(VirtualNode.class);
+    private final AppLogger appLogger = new DefaultAppLogger(VirtualNode.class);
 
     private final Node node;
     private final ConsensusAlgorithm algorithm;
@@ -104,7 +104,7 @@ public class VirtualNode {
                 algorithm.handleMessage(msg);
             }
         } catch (Exception e) {
-            logger.error("Error processing message from {}: {}", msg.getSourceNodeId(), e.getMessage(), e);
+            appLogger.error("Error processing message from {}: {}", msg.getSourceNodeId(), e.getMessage(), e);
         }
     }
 
@@ -121,7 +121,7 @@ public class VirtualNode {
             for (Map.Entry<String, PhiAccrual> entry : phiDetectors.entrySet()) {
                 double phi = entry.getValue().computePhi(now);
                 if (phi >= phiThreshold) {
-                    logger.info("Node {} suspects neighbor {} has failed (phi={})", node.getId(), entry.getKey(), phi);
+                    appLogger.info("Node {} suspects neighbor {} has failed (phi={})", node.getId(), entry.getKey(), phi);
                 }
             }
         }, 0, 1, TimeUnit.SECONDS);

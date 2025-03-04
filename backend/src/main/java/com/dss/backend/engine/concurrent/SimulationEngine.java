@@ -6,12 +6,12 @@ import com.dss.backend.algorithm.failure.Heartbeat;
 import com.dss.backend.algorithm.failure.RingTopology;
 import com.dss.backend.controller.SimulationWebSocketController;
 import com.dss.backend.dto.EventDTO;
+import com.dss.backend.logging.AppLogger;
+import com.dss.backend.logging.DefaultAppLogger;
 import com.dss.backend.metrics.DefaultMetricsCollector;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.metrics.PerformanceMetricsCollector;
 import com.dss.backend.model.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 
 public class SimulationEngine {
 
-    private static final Logger logger = LoggerFactory.getLogger(SimulationEngine.class);
+    private final AppLogger appLogger = new DefaultAppLogger(SimulationEngine.class);
 
     // Map of nodeId -> VirtualNode
     private Map<String, VirtualNode> nodeMap = new ConcurrentHashMap<>();
@@ -122,7 +122,7 @@ public class SimulationEngine {
             for (Node node : ringTopology.getNodes()) {
                 String failedSuccessor = ringTopology.checkSuccessorFailure(node.getId());
                 if (failedSuccessor != null) {
-                    logger.info("Node {} detected that its successor {} has failed.", node.getId(), failedSuccessor);
+                    appLogger.info("Node {} detected that its successor {} has failed.", node.getId(), failedSuccessor);
                 }
             }
         }, 0, 1, TimeUnit.SECONDS);
