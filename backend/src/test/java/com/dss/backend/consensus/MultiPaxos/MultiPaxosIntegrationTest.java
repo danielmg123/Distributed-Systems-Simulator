@@ -31,7 +31,7 @@ public class MultiPaxosIntegrationTest {
         props.setMultipaxosPrepareTimeoutMillis(10000);
         props.setMultipaxosQuorum(0); // Use default quorum calculation
 
-        leader = new MultiPaxos(router, props, new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
+        leader = new MultiPaxos("node1", router, props, new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
         leader.setLeader(true);
         leader.setTotalNodes(3);
         // Register three dummy nodes as VirtualNode instances.
@@ -51,8 +51,8 @@ public class MultiPaxosIntegrationTest {
         promisePayload.setAcceptedValue(null);
 
         // Simulate receiving PROMISE messages from node1 and node2.
-        leader.handleMessage(new SimulationMessage("node1", "self", MessageType.PROMISE, promisePayload));
-        leader.handleMessage(new SimulationMessage("node2", "self", MessageType.PROMISE, promisePayload));
+        leader.handleMessage(new SimulationMessage("node1", "node1", MessageType.PROMISE, promisePayload));
+        leader.handleMessage(new SimulationMessage("node2", "node2", MessageType.PROMISE, promisePayload));
 
         // Wait until the prepare phase is completed
         boolean prepareCompleted = false;

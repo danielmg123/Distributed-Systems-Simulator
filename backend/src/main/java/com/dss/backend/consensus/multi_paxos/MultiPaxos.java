@@ -1,6 +1,7 @@
 package com.dss.backend.consensus.multi_paxos;
 
 import com.dss.backend.consensus.ConsensusAlgorithm;
+import com.dss.backend.consensus.paxos.PaxosMessagingUtil;
 import com.dss.backend.consensus.paxos.PaxosPayload;
 import com.dss.backend.consensus.paxos.ProposerState;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
@@ -54,20 +55,22 @@ public class MultiPaxos implements ConsensusAlgorithm {
     // Simulation properties for configuration
     private final SimulationProperties simulationProperties;
 
+    private final String localNodeId;
+
     /**
      * Constructs a MultiPaxos instance with all required dependencies.
      *
-     * @param router                The MessageRouter instance used for sending/receiving messages.
+     * @param localNodeId           The local node's actual ID.
+     * @param router                The MessageRouter instance.
      * @param simulationProperties  The SimulationProperties for configuration.
-     * @param scheduler             The Scheduler abstraction for scheduling tasks.
+     * @param scheduler             The Scheduler abstraction.
      */
-    public MultiPaxos(MessageRouter router, SimulationProperties simulationProperties, Scheduler scheduler) {
+    public MultiPaxos(String localNodeId, MessageRouter router, SimulationProperties simulationProperties, Scheduler scheduler) {
+        this.localNodeId = localNodeId;
         this.router = router;
         this.simulationProperties = simulationProperties;
         this.scheduler = scheduler;
-        // Assume "self" as the local node id for simplicity.
-        this.broadcaster = new ConsensusBroadcaster(router, "self");
-        // Initialize the prepare timeout from external configuration.
+        this.broadcaster = new ConsensusBroadcaster(router, localNodeId);
         this.prepareTimeoutMillis = simulationProperties.getMultipaxosPrepareTimeoutMillis();
     }
 
@@ -101,19 +104,16 @@ public class MultiPaxos implements ConsensusAlgorithm {
         if (isLeader) {
             if (!preparePhaseCompleted) {
                 currentProposalNumber = ++proposalCounter;
-                // Initialize the per-proposal state
                 proposerState = new ProposerState(value);
-                broadcastPrepareRequest(currentProposalNumber);
-                // Schedule a timeout to reset the prepare phase if quorum is not reached.
+                PaxosMessagingUtil.broadcastPrepareRequest(broadcaster, currentProposalNumber, proposerState.getOriginalValue());
                 scheduler.schedule(() -> {
                     if (!preparePhaseCompleted) {
                         resetPreparePhase();
                     }
                 }, prepareTimeoutMillis, TimeUnit.MILLISECONDS);
             } else {
-                // Fast path: if prepare phase already completed, send accept request directly.
                 currentProposalNumber = ++proposalCounter;
-                broadcastAcceptRequest(currentProposalNumber, value);
+                PaxosMessagingUtil.broadcastAcceptRequest(broadcaster, currentProposalNumber, value);
             }
         } else {
             appLogger.info("Node is not leader. It must forward proposals to the leader.");
@@ -176,13 +176,6 @@ public class MultiPaxos implements ConsensusAlgorithm {
 
     // --- Broadcasting Helper Methods ---
 
-    private void broadcastPrepareRequest(int proposalNumber) {
-        PaxosPayload payload = new PaxosPayload();
-        payload.setProposalNumber(proposalNumber);
-        payload.setProposedValue(proposerState.getOriginalValue());
-        broadcaster.broadcast(MessageType.PREPARE_REQUEST, payload);
-    }
-
     private void broadcastAcceptRequest(int proposalNumber, Object value) {
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
@@ -208,7 +201,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
             response.setProposalNumber(proposalNumber);
             response.setAcceptedId(acceptedId);
             response.setAcceptedValue(acceptedValue);
-            SimulationMessage msg = SimulationMessageFactory.createMessage("self", sourceNodeId, MessageType.PROMISE, response);
+            SimulationMessage msg = SimulationMessageFactory.createMessage(localNodeId, sourceNodeId, MessageType.PROMISE, response);
             router.messageSent(msg);
             appLogger.info("Sent PROMISE for proposal #{} to {}", proposalNumber, sourceNodeId);
         } else {
@@ -247,7 +240,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
             PaxosPayload response = new PaxosPayload();
             response.setProposalNumber(proposalNumber);
             response.setProposedValue(acceptedValue);
-            SimulationMessage msg = SimulationMessageFactory.createMessage("self", sourceNodeId, MessageType.ACCEPTED, response);
+            SimulationMessage msg = SimulationMessageFactory.createMessage(localNodeId, sourceNodeId, MessageType.ACCEPTED, response);
             router.messageSent(msg);
             appLogger.info("Accepted proposal #{} from {}", proposalNumber, sourceNodeId);
         } else {

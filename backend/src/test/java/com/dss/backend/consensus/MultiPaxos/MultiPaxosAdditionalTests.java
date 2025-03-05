@@ -31,7 +31,8 @@ public class MultiPaxosAdditionalTests {
         props.setMultipaxosPrepareTimeoutMillis(10000);
         props.setMultipaxosQuorum(0); // Use default quorum calculation
 
-        leader = new MultiPaxos(router, props, new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
+        // Supply the local node id ("node1") to the constructor.
+        leader = new MultiPaxos("node1", router, props, new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
         leader.setLeader(true);
         leader.setTotalNodes(3);
 
@@ -40,6 +41,7 @@ public class MultiPaxosAdditionalTests {
         router.registerNode("node2", new DummyVirtualNode("node2"));
         router.registerNode("node3", new DummyVirtualNode("node3"));
     }
+
 
     @Test
     public void testConflictingProposals() throws InterruptedException {
@@ -58,8 +60,8 @@ public class MultiPaxosAdditionalTests {
         promise2.setAcceptedValue(null);
 
         // Process promise responses
-        leader.handleMessage(new SimulationMessage("node1", "self", MessageType.PROMISE, promise1));
-        leader.handleMessage(new SimulationMessage("node2", "self", MessageType.PROMISE, promise2));
+        leader.handleMessage(new SimulationMessage("node1", "node1", MessageType.PROMISE, promise1));
+        leader.handleMessage(new SimulationMessage("node2", "node2", MessageType.PROMISE, promise2));
 
         // Wait until preparePhaseCompleted becomes true (or timeout after 5 seconds)
         boolean prepareCompleted = false;

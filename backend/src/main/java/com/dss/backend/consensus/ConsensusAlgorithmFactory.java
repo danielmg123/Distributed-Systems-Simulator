@@ -50,7 +50,7 @@ public class ConsensusAlgorithmFactory {
             case RAFT:
                 return new Raft(nodeId, allNodeIds, router);
             case MULTI_PAXOS:
-                MultiPaxos multiPaxos = new MultiPaxos(router, simulationProperties, scheduler);
+                MultiPaxos multiPaxos = new MultiPaxos(nodeId, router, simulationProperties, scheduler);
                 multiPaxos.setTotalNodes(allNodeIds.size());
                 multiPaxos.setLeader(allNodeIds.get(0).equals(nodeId));
                 return multiPaxos;
