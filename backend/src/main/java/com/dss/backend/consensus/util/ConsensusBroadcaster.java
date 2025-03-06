@@ -2,6 +2,7 @@ package com.dss.backend.consensus.util;
 
 import com.dss.backend.messaging.MessageRouter;
 import com.dss.backend.messaging.MessageType;
+import com.dss.backend.messaging.ProtocolType;
 import com.dss.backend.messaging.SimulationMessage;
 import com.dss.backend.messaging.SimulationMessageFactory;
 
@@ -15,15 +16,15 @@ public class ConsensusBroadcaster {
     }
 
     /**
-     * Broadcasts a message of the given type and payload to all nodes except the local one.
+     * Broadcasts a message of the given type, payload, and protocol to all nodes except the local one.
      */
-    public void broadcast(MessageType messageType, Object payload) {
+    public void broadcast(MessageType messageType, Object payload, ProtocolType protocol) {
         for (String targetNodeId : router.getRegisteredNodeIds()) {
             if (!targetNodeId.equals(localNodeId)) {
-                SimulationMessage msg = SimulationMessageFactory.createMessage(localNodeId, targetNodeId, messageType, payload);
+                SimulationMessage msg = SimulationMessageFactory.createMessage(localNodeId, targetNodeId,
+                        messageType, payload, protocol);
                 router.messageSent(msg);
             }
         }
     }
-
 }

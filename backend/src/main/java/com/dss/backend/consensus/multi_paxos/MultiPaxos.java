@@ -7,14 +7,12 @@ import com.dss.backend.consensus.paxos.ProposerState;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.Scheduler;
-import com.dss.backend.messaging.MessageRouter;
-import com.dss.backend.messaging.MessageType;
-import com.dss.backend.messaging.SimulationMessage;
-import com.dss.backend.messaging.SimulationMessageFactory;
+import com.dss.backend.messaging.*;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 import lombok.Getter;
 
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 public class MultiPaxos implements ConsensusAlgorithm {
@@ -35,6 +33,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
     private boolean preparePhaseCompleted = false;
     @Getter
     private int currentProposalNumber = 0;
+    private ScheduledFuture<?> prepareTimeoutTask;
 
     // Accept phase variables
     private int acceptResponseCount = 0;
@@ -106,7 +105,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
                 currentProposalNumber = ++proposalCounter;
                 proposerState = new ProposerState(value);
                 PaxosMessagingUtil.broadcastPrepareRequest(broadcaster, currentProposalNumber, proposerState.getOriginalValue());
-                scheduler.schedule(() -> {
+                prepareTimeoutTask = scheduler.schedule(() -> {
                     if (!preparePhaseCompleted) {
                         resetPreparePhase();
                     }
@@ -181,14 +180,14 @@ public class MultiPaxos implements ConsensusAlgorithm {
         payload.setProposalNumber(proposalNumber);
         payload.setProposedValue(value);
         acceptResponseCount = 0;
-        broadcaster.broadcast(MessageType.ACCEPT_REQUEST, payload);
+        broadcaster.broadcast(MessageType.ACCEPT_REQUEST, payload, ProtocolType.MULTI_PAXOS);
     }
 
     private void broadcastCommit(int proposalNumber, Object value) {
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
         payload.setProposedValue(value);
-        broadcaster.broadcast(MessageType.COMMIT, payload);
+        broadcaster.broadcast(MessageType.COMMIT, payload, ProtocolType.MULTI_PAXOS);
     }
 
     // --- Message Handlers ---
@@ -201,7 +200,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
             response.setProposalNumber(proposalNumber);
             response.setAcceptedId(acceptedId);
             response.setAcceptedValue(acceptedValue);
-            SimulationMessage msg = SimulationMessageFactory.createMessage(localNodeId, sourceNodeId, MessageType.PROMISE, response);
+            SimulationMessage msg = SimulationMessageFactory.createMessage(localNodeId, sourceNodeId, MessageType.PROMISE, response, ProtocolType.MULTI_PAXOS);
             router.messageSent(msg);
             appLogger.info("Sent PROMISE for proposal #{} to {}", proposalNumber, sourceNodeId);
         } else {
@@ -209,6 +208,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
         }
     }
 
+   // In the onPromise() method, when quorum is reached:
     private void onPromise(String sourceNodeId, PaxosPayload payload) {
         if (!isLeader || preparePhaseCompleted) {
             return;
@@ -222,6 +222,11 @@ public class MultiPaxos implements ConsensusAlgorithm {
         appLogger.info("Received PROMISE from {} for proposal #{} (count = {})",
                 sourceNodeId, proposalNumber, proposerState.getPromiseCount());
         if (proposerState.getPromiseCount() >= quorum) {
+            // Cancel the pending timeout task to prevent stale timeout logic
+            if (prepareTimeoutTask != null) {
+                prepareTimeoutTask.cancel(false);
+                prepareTimeoutTask = null;
+            }
             Object valueToAccept = (proposerState.getHighestAcceptedValue() != null)
                     ? proposerState.getHighestAcceptedValue()
                     : proposerState.getOriginalValue();
@@ -240,7 +245,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
             PaxosPayload response = new PaxosPayload();
             response.setProposalNumber(proposalNumber);
             response.setProposedValue(acceptedValue);
-            SimulationMessage msg = SimulationMessageFactory.createMessage(localNodeId, sourceNodeId, MessageType.ACCEPTED, response);
+            SimulationMessage msg = SimulationMessageFactory.createMessage(localNodeId, sourceNodeId, MessageType.ACCEPTED, response, ProtocolType.MULTI_PAXOS);
             router.messageSent(msg);
             appLogger.info("Accepted proposal #{} from {}", proposalNumber, sourceNodeId);
         } else {

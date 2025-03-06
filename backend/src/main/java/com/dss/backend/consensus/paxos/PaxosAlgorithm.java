@@ -6,10 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.dss.backend.consensus.AbstractConsensusAlgorithm;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
-import com.dss.backend.messaging.MessageRouter;
-import com.dss.backend.messaging.MessageType;
-import com.dss.backend.messaging.SimulationMessage;
-import com.dss.backend.messaging.SimulationMessageFactory;
+import com.dss.backend.messaging.*;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 
@@ -121,7 +118,7 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
         payload.setProposedValue(originalValue);
-        broadcaster.broadcast(MessageType.PREPARE_REQUEST, payload);
+        broadcaster.broadcast(MessageType.PREPARE_REQUEST, payload, ProtocolType.PAXOS);
     }
 
     /**
@@ -141,7 +138,7 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
             reply.setAcceptedValue(paxosState.getAcceptedValue());
 
             SimulationMessage promiseMsg = SimulationMessageFactory.createMessage(
-                    myNodeId, sourceNode, MessageType.PROMISE, reply);
+                    myNodeId, sourceNode, MessageType.PROMISE, reply, ProtocolType.PAXOS);
             router.messageSent(promiseMsg);
         }
         // Optionally, else send a rejection.
@@ -189,7 +186,7 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
         // Broadcast ACCEPT_REQUEST to all nodes.
         for (String nodeId : allNodeIds) {
             SimulationMessage acceptRequestMsg = SimulationMessageFactory.createMessage(
-                    myNodeId, nodeId, MessageType.ACCEPT_REQUEST, payload);
+                    myNodeId, nodeId, MessageType.ACCEPT_REQUEST, payload, ProtocolType.PAXOS);
             router.messageSent(acceptRequestMsg);
         }
     }
@@ -210,7 +207,7 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
             acceptedPayload.setProposedValue(payload.getProposedValue());
 
             SimulationMessage acceptedMsg = SimulationMessageFactory.createMessage(
-                    myNodeId, sourceNode, MessageType.ACCEPTED, acceptedPayload);
+                    myNodeId, sourceNode, MessageType.ACCEPTED, acceptedPayload, ProtocolType.PAXOS);
             router.messageSent(acceptedMsg);
             appLogger.info("Accepted proposal #{} from {}", proposalNumber, sourceNode);
         } else {

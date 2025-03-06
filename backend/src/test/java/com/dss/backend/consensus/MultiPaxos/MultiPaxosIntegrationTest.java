@@ -1,12 +1,12 @@
 package com.dss.backend.consensus.MultiPaxos;
 
-import com.dss.backend.consensus.ConsensusAlgorithm;
 import com.dss.backend.consensus.multi_paxos.MultiPaxos;
 import com.dss.backend.consensus.paxos.PaxosPayload;
 import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.messaging.MessageRouter;
 import com.dss.backend.messaging.MessageType;
+import com.dss.backend.messaging.ProtocolType;
 import com.dss.backend.messaging.SimulationMessage;
 import com.dss.backend.messaging.VirtualNode;
 import com.dss.backend.model.Node;
@@ -51,8 +51,8 @@ public class MultiPaxosIntegrationTest {
         promisePayload.setAcceptedValue(null);
 
         // Simulate receiving PROMISE messages from node1 and node2.
-        leader.handleMessage(new SimulationMessage("node1", "node1", MessageType.PROMISE, promisePayload));
-        leader.handleMessage(new SimulationMessage("node2", "node2", MessageType.PROMISE, promisePayload));
+        leader.handleMessage(new SimulationMessage("node1", "node1", MessageType.PROMISE, promisePayload, ProtocolType.PAXOS));
+        leader.handleMessage(new SimulationMessage("node2", "node2", MessageType.PROMISE, promisePayload, ProtocolType.PAXOS));
 
         // Wait until the prepare phase is completed
         boolean prepareCompleted = false;
@@ -70,8 +70,8 @@ public class MultiPaxosIntegrationTest {
         acceptedPayload.setProposedValue(proposedValue);
 
         // Simulate receiving ACCEPTED messages.
-        leader.handleMessage(new SimulationMessage("node1", "self", MessageType.ACCEPTED, acceptedPayload));
-        leader.handleMessage(new SimulationMessage("node2", "self", MessageType.ACCEPTED, acceptedPayload));
+        leader.handleMessage(new SimulationMessage("node1", "self", MessageType.ACCEPTED, acceptedPayload, ProtocolType.PAXOS));
+        leader.handleMessage(new SimulationMessage("node2", "self", MessageType.ACCEPTED, acceptedPayload, ProtocolType.PAXOS));
 
         assertEquals(proposedValue, leader.getCommittedValue(), "Committed value should match the proposed value.");
     }
@@ -93,7 +93,7 @@ public class MultiPaxosIntegrationTest {
         }
     }
 
-    static class DummyConsensusAlgorithm implements ConsensusAlgorithm {
+    static class DummyConsensusAlgorithm implements com.dss.backend.consensus.ConsensusAlgorithm {
         @Override
         public void propose(Object value) { }
         @Override

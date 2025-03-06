@@ -1,12 +1,12 @@
 package com.dss.backend.consensus.MultiPaxos;
 
-import com.dss.backend.consensus.ConsensusAlgorithm;
 import com.dss.backend.consensus.multi_paxos.MultiPaxos;
 import com.dss.backend.consensus.paxos.PaxosPayload;
 import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.messaging.MessageRouter;
 import com.dss.backend.messaging.MessageType;
+import com.dss.backend.messaging.ProtocolType;
 import com.dss.backend.messaging.SimulationMessage;
 import com.dss.backend.messaging.VirtualNode;
 import com.dss.backend.model.Node;
@@ -42,7 +42,6 @@ public class MultiPaxosAdditionalTests {
         router.registerNode("node3", new DummyVirtualNode("node3"));
     }
 
-
     @Test
     public void testConflictingProposals() throws InterruptedException {
         leader.propose("value1");
@@ -59,9 +58,9 @@ public class MultiPaxosAdditionalTests {
         promise2.setAcceptedId(-1);
         promise2.setAcceptedValue(null);
 
-        // Process promise responses
-        leader.handleMessage(new SimulationMessage("node1", "node1", MessageType.PROMISE, promise1));
-        leader.handleMessage(new SimulationMessage("node2", "node2", MessageType.PROMISE, promise2));
+        // Process promise responses with the updated constructor.
+        leader.handleMessage(new SimulationMessage("node1", "node1", MessageType.PROMISE, promise1, ProtocolType.PAXOS));
+        leader.handleMessage(new SimulationMessage("node2", "node2", MessageType.PROMISE, promise2, ProtocolType.PAXOS));
 
         // Wait until preparePhaseCompleted becomes true (or timeout after 5 seconds)
         boolean prepareCompleted = false;
@@ -79,8 +78,8 @@ public class MultiPaxosAdditionalTests {
         acceptedPayload.setProposalNumber(currentProposal);
         acceptedPayload.setProposedValue("value2");
 
-        leader.handleMessage(new SimulationMessage("node1", "self", MessageType.ACCEPTED, acceptedPayload));
-        leader.handleMessage(new SimulationMessage("node2", "self", MessageType.ACCEPTED, acceptedPayload));
+        leader.handleMessage(new SimulationMessage("node1", "self", MessageType.ACCEPTED, acceptedPayload, ProtocolType.PAXOS));
+        leader.handleMessage(new SimulationMessage("node2", "self", MessageType.ACCEPTED, acceptedPayload, ProtocolType.PAXOS));
 
         // Verify that the committed value matches the highest accepted value from the promises.
         assertEquals("value2", leader.getCommittedValue(), "Committed value should match the highest accepted proposal from promises");
@@ -103,7 +102,7 @@ public class MultiPaxosAdditionalTests {
         }
     }
 
-    static class DummyConsensusAlgorithm implements ConsensusAlgorithm {
+    static class DummyConsensusAlgorithm implements com.dss.backend.consensus.ConsensusAlgorithm {
         @Override
         public void propose(Object value) { }
         @Override

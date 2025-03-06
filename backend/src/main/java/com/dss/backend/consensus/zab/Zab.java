@@ -2,10 +2,7 @@ package com.dss.backend.consensus.zab;
 
 import com.dss.backend.consensus.AbstractConsensusAlgorithm;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
-import com.dss.backend.messaging.MessageRouter;
-import com.dss.backend.messaging.MessageType;
-import com.dss.backend.messaging.SimulationMessage;
-import com.dss.backend.messaging.SimulationMessageFactory;
+import com.dss.backend.messaging.*;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 import lombok.Setter;
@@ -78,7 +75,7 @@ public class Zab extends AbstractConsensusAlgorithm {
         ackCounts.put(zxid, 1); // Count self acknowledgment.
         ZabPayload payload = new ZabPayload(MessageType.PROPOSAL, zxid, value);
         // Broadcast the proposal to all other nodes.
-        broadcaster.broadcast(MessageType.PROPOSAL, payload);
+        broadcaster.broadcast(MessageType.PROPOSAL, payload, ProtocolType.ZAB);
         appLogger.info("Leader {} proposed value '{}' with zxid {}", nodeId, value, zxid);
     }
 
@@ -142,7 +139,7 @@ public class Zab extends AbstractConsensusAlgorithm {
         Object value = payload.getProposedValue();
         appLogger.info("Node {} received PROPOSE with zxid {} and value '{}' from {}", nodeId, zxid, value, sourceNodeId);
         ZabPayload ackPayload = new ZabPayload(MessageType.ACK, zxid, value);
-        SimulationMessage ackMsg = SimulationMessageFactory.createMessage(nodeId, sourceNodeId, MessageType.ACK, ackPayload);
+        SimulationMessage ackMsg = SimulationMessageFactory.createMessage(nodeId, sourceNodeId, MessageType.ACK, ackPayload, ProtocolType.ZAB);
         router.messageSent(ackMsg);
         appLogger.info("Node {} sent ACK for zxid {} to {}", nodeId, zxid, sourceNodeId);
     }
@@ -172,7 +169,7 @@ public class Zab extends AbstractConsensusAlgorithm {
         if (count >= ((totalNodes / 2) + 1)) {
             Object value = pendingProposals.get(zxid);
             ZabPayload commitPayload = new ZabPayload(MessageType.COMMIT, zxid, value);
-            broadcaster.broadcast(MessageType.COMMIT, commitPayload);
+            broadcaster.broadcast(MessageType.COMMIT, commitPayload, ProtocolType.ZAB);
             commit(value);
             pendingProposals.remove(zxid);
             ackCounts.remove(zxid);

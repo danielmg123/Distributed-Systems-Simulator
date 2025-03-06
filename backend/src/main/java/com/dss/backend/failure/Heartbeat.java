@@ -4,13 +4,14 @@ import com.dss.backend.engine.Scheduler;
 import com.dss.backend.messaging.MessageRouter;
 import com.dss.backend.messaging.SimulationMessage;
 import com.dss.backend.messaging.MessageType;
+import com.dss.backend.messaging.ProtocolType;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 public class Heartbeat implements HeartbeatService {
     private final MessageRouter router;
     private final String nodeId;
-    private final long heartbeatIntervalMillis; // now configurable
+    private final long heartbeatIntervalMillis;
     private ScheduledFuture<?> heartbeatFuture;
 
     public Heartbeat(MessageRouter router, String nodeId, long heartbeatIntervalMillis) {
@@ -19,13 +20,12 @@ public class Heartbeat implements HeartbeatService {
         this.heartbeatIntervalMillis = heartbeatIntervalMillis;
     }
 
-    // Schedule heartbeat tasks on the provided central scheduler.
     @Override
     public void start(Scheduler scheduler) {
         heartbeatFuture = scheduler.scheduleAtFixedRate(() -> {
             for (String targetId : router.getRegisteredNodeIds()) {
                 if (!targetId.equals(nodeId)) {
-                    SimulationMessage msg = new SimulationMessage(nodeId, targetId, MessageType.HEARTBEAT, System.currentTimeMillis());
+                    SimulationMessage msg = new SimulationMessage(nodeId, targetId, MessageType.HEARTBEAT, System.currentTimeMillis(), ProtocolType.UNIVERSAL);
                     router.messageSent(msg);
                 }
             }

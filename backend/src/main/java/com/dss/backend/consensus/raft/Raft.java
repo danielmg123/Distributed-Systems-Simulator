@@ -2,10 +2,7 @@ package com.dss.backend.consensus.raft;
 
 import com.dss.backend.consensus.AbstractConsensusAlgorithm;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
-import com.dss.backend.messaging.MessageRouter;
-import com.dss.backend.messaging.MessageType;
-import com.dss.backend.messaging.SimulationMessage;
-import com.dss.backend.messaging.SimulationMessageFactory;
+import com.dss.backend.messaging.*;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 
@@ -156,7 +153,7 @@ public class Raft extends AbstractConsensusAlgorithm {
         voteRequest.setCandidateId(myNodeId);
 
         // Broadcast vote request to all nodes.
-        broadcaster.broadcast(MessageType.REQUEST_VOTE, voteRequest);
+        broadcaster.broadcast(MessageType.REQUEST_VOTE, voteRequest, ProtocolType.RAFT);
     }
 
     private void handleRequestVote(String sourceNode, RaftPayload rp) {
@@ -178,7 +175,7 @@ public class Raft extends AbstractConsensusAlgorithm {
         response.setTerm(currentTerm);
         response.setVoteGranted(grantVote);
 
-        SimulationMessage sm = SimulationMessageFactory.createMessage(myNodeId, sourceNode, MessageType.REQUEST_VOTE_RESPONSE, response);
+        SimulationMessage sm = SimulationMessageFactory.createMessage(myNodeId, sourceNode, MessageType.REQUEST_VOTE_RESPONSE, response, ProtocolType.RAFT);
         router.messageSent(sm);
     }
 
@@ -252,7 +249,7 @@ public class Raft extends AbstractConsensusAlgorithm {
         payload.setEntries(newEntries);
         payload.setLeaderCommit(commitIndex);
 
-        SimulationMessage sm = SimulationMessageFactory.createMessage(myNodeId, follower, MessageType.APPEND_ENTRIES, payload);
+        SimulationMessage sm = SimulationMessageFactory.createMessage(myNodeId, follower, MessageType.APPEND_ENTRIES, payload, ProtocolType.RAFT);
         router.messageSent(sm);
     }
 
@@ -323,7 +320,7 @@ public class Raft extends AbstractConsensusAlgorithm {
         rp.setMatchIndex(matchIndex);
         rp.setConflictTerm(conflictTerm);
 
-        SimulationMessage sm = SimulationMessageFactory.createMessage(myNodeId, targetNode, MessageType.APPEND_ENTRIES_RESPONSE, rp);
+        SimulationMessage sm = SimulationMessageFactory.createMessage(myNodeId, targetNode, MessageType.APPEND_ENTRIES_RESPONSE, rp, ProtocolType.RAFT);
         router.messageSent(sm);
     }
 

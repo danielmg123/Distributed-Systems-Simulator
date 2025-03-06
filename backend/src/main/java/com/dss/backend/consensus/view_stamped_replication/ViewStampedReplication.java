@@ -2,10 +2,7 @@ package com.dss.backend.consensus.view_stamped_replication;
 
 import com.dss.backend.consensus.ConsensusAlgorithm;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
-import com.dss.backend.messaging.MessageRouter;
-import com.dss.backend.messaging.MessageType;
-import com.dss.backend.messaging.SimulationMessage;
-import com.dss.backend.messaging.SimulationMessageFactory;
+import com.dss.backend.messaging.*;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 import lombok.Setter;
@@ -68,7 +65,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
         ackCount.put(opNum, 1); // Count self ack.
         VsrPayload payload = new VsrPayload(MessageType.PREPARE, view, opNum, value);
         // Use the broadcaster to send the PREPARE message.
-        broadcaster.broadcast(MessageType.PREPARE, payload);
+        broadcaster.broadcast(MessageType.PREPARE, payload, ProtocolType.VIEW_STAMPED_REPLICATION);
         appLogger.info("Primary {} initiated PREPARE for op #{} with value: {}", nodeId, opNum, value);
     }
 
@@ -133,7 +130,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
         appLogger.info("Node {} received PREPARE for op #{} with value: {} from {}", nodeId, receivedOp, proposedValue, sourceNodeId);
         // Reply with a PREPARE_RESPONSE.
         VsrPayload response = new VsrPayload(MessageType.PREPARE_RESPONSE, view, receivedOp, proposedValue);
-        SimulationMessage responseMsg = SimulationMessageFactory.createMessage(nodeId, sourceNodeId, MessageType.PREPARE_RESPONSE, response);
+        SimulationMessage responseMsg = SimulationMessageFactory.createMessage(nodeId, sourceNodeId, MessageType.PREPARE_RESPONSE, response, ProtocolType.VIEW_STAMPED_REPLICATION);
         messageRouter.messageSent(responseMsg);
         appLogger.info("Node {} sent PREPARE_RESPONSE for op #{} to {}", nodeId, receivedOp, sourceNodeId);
     }
@@ -167,7 +164,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
             Object valueToCommit = pendingOps.get(responseOp);
             // Broadcast COMMIT message to all backups.
             VsrPayload commitPayload = new VsrPayload(MessageType.COMMIT, view, responseOp, valueToCommit);
-            broadcaster.broadcast(MessageType.COMMIT, commitPayload);
+            broadcaster.broadcast(MessageType.COMMIT, commitPayload, ProtocolType.VIEW_STAMPED_REPLICATION);
 
             // Primary commits locally.
             commit(valueToCommit);

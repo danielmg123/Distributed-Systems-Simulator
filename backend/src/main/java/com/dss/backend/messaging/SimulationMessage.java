@@ -12,4 +12,5 @@ public class SimulationMessage {
     private String targetNodeId;
     private MessageType type;
     private Object payload;
+    private ProtocolType protocol;
 }
