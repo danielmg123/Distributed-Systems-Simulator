@@ -5,11 +5,11 @@ import com.dss.backend.model.NodeStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest;
-import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import java.util.List;
 
-@SpringJUnitConfig
+import static org.junit.jupiter.api.Assertions.*;
+
 @DataMongoTest
 public class NodeRepositoryTest {
 
@@ -17,17 +17,56 @@ public class NodeRepositoryTest {
     private NodeRepository nodeRepository;
 
     @Test
-    public void contextLoads() throws Exception {
+    public void contextLoads() {
         assertNotNull(nodeRepository);
     }
 
     @Test
     public void testFindByStatus() {
-        Node testNode = new Node();
-        testNode.setAddress("123 Test Street");
-        testNode.setStatus(NodeStatus.ACTIVE);
-        nodeRepository.save(testNode);
+        // Clean up the repository.
+        nodeRepository.deleteAll();
 
-        assertNotNull(nodeRepository.findByStatus(NodeStatus.ACTIVE));
+        // Insert multiple nodes with different statuses.
+        Node activeNode1 = new Node();
+        activeNode1.setAddress("111 Active St");
+        activeNode1.setStatus(NodeStatus.ACTIVE);
+        nodeRepository.save(activeNode1);
+
+        Node activeNode2 = new Node();
+        activeNode2.setAddress("222 Active St");
+        activeNode2.setStatus(NodeStatus.ACTIVE);
+        nodeRepository.save(activeNode2);
+
+        Node inactiveNode = new Node();
+        inactiveNode.setAddress("333 Inactive St");
+        inactiveNode.setStatus(NodeStatus.INACTIVE);
+        nodeRepository.save(inactiveNode);
+
+        // Query by ACTIVE status.
+        List<Node> activeNodes = nodeRepository.findByStatus(NodeStatus.ACTIVE);
+        assertNotNull(activeNodes);
+        assertEquals(2, activeNodes.size());
+    }
+
+    @Test
+    public void testFindByAddress() {
+        // Clean up the repository.
+        nodeRepository.deleteAll();
+
+        // Insert nodes with different addresses.
+        Node node1 = new Node();
+        node1.setAddress("123 Test Ave");
+        node1.setStatus(NodeStatus.ACTIVE);
+        nodeRepository.save(node1);
+
+        Node node2 = new Node();
+        node2.setAddress("456 Sample Rd");
+        node2.setStatus(NodeStatus.INACTIVE);
+        nodeRepository.save(node2);
+
+        // Retrieve the node by address.
+        Node found = nodeRepository.findByAddress("123 Test Ave");
+        assertNotNull(found);
+        assertEquals("123 Test Ave", found.getAddress());
     }
 }
