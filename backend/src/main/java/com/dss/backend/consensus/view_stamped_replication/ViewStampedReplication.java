@@ -2,6 +2,7 @@ package com.dss.backend.consensus.view_stamped_replication;
 
 import com.dss.backend.consensus.ConsensusAlgorithm;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
+import com.dss.backend.consensus.util.ConsensusUtils;
 import com.dss.backend.messaging.*;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
@@ -94,11 +95,11 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
      */
     @Override
     public void handleMessage(SimulationMessage msg) {
-        if (!(msg.getPayload() instanceof VsrPayload)) {
+        VsrPayload payload = ConsensusUtils.safeCastPayload(msg, VsrPayload.class);
+        if (payload == null) {
             appLogger.info("Node {} received an unsupported payload: {}", nodeId, msg.getPayload());
             return;
         }
-        VsrPayload payload = (VsrPayload) msg.getPayload();
         switch (payload.getType()) {
             case PREPARE:
                 handlePrepare(msg.getSourceNodeId(), payload);
@@ -111,6 +112,7 @@ public class ViewStampedReplication implements ConsensusAlgorithm {
                 break;
             default:
                 appLogger.info("Node {} received unknown VSR message type: {}", nodeId, payload.getType());
+                break;
         }
     }
 

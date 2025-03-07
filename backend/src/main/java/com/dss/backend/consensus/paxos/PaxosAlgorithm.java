@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.dss.backend.consensus.AbstractConsensusAlgorithm;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
+import com.dss.backend.consensus.util.ConsensusUtils;
 import com.dss.backend.messaging.*;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
@@ -83,12 +84,10 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
 
     @Override
     public void handleMessage(SimulationMessage msg) {
-        // Only process messages whose payload is an instance of PaxosPayload.
-        if (!(msg.getPayload() instanceof PaxosPayload)) {
+        PaxosPayload payload = ConsensusUtils.safeCastPayload(msg, PaxosPayload.class);
+        if (payload == null) {
             return;
         }
-
-        PaxosPayload payload = (PaxosPayload) msg.getPayload();
         switch (msg.getType()) {
             case PREPARE_REQUEST:
                 onPrepareRequest(msg.getSourceNodeId(), payload);
@@ -102,7 +101,6 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
             case ACCEPTED:
                 onAccepted(msg.getSourceNodeId(), payload);
                 break;
-            // Additional message types (e.g., COMMIT) could be handled here.
             default:
                 // Ignore unhandled message types.
                 break;

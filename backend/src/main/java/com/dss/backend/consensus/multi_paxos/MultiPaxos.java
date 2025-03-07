@@ -6,6 +6,7 @@ import com.dss.backend.consensus.paxos.PaxosPayload;
 import com.dss.backend.consensus.paxos.ProposerState;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.config.SimulationProperties;
+import com.dss.backend.consensus.util.ConsensusUtils;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.messaging.*;
 import com.dss.backend.logging.AppLogger;
@@ -149,8 +150,11 @@ public class MultiPaxos implements ConsensusAlgorithm {
 
     @Override
     public void handleMessage(SimulationMessage msg) {
+        PaxosPayload payload = ConsensusUtils.safeCastPayload(msg, PaxosPayload.class);
+        if (payload == null) {
+            return;
+        }
         MessageType type = msg.getType();
-        PaxosPayload payload = (PaxosPayload) msg.getPayload();
         switch (type) {
             case PREPARE_REQUEST:
                 onPrepareRequest(msg.getSourceNodeId(), payload);

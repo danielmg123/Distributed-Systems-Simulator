@@ -2,6 +2,7 @@ package com.dss.backend.consensus.raft;
 
 import com.dss.backend.consensus.AbstractConsensusAlgorithm;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
+import com.dss.backend.consensus.util.ConsensusUtils;
 import com.dss.backend.messaging.*;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
@@ -116,15 +117,26 @@ public class Raft extends AbstractConsensusAlgorithm {
      */
     @Override
     public void handleMessage(SimulationMessage msg) {
-        if (!(msg.getPayload() instanceof RaftPayload rp)) {
+        RaftPayload payload = ConsensusUtils.safeCastPayload(msg, RaftPayload.class);
+        if (payload == null) {
             return;
         }
-        switch (rp.getType()) {
-            case REQUEST_VOTE -> handleRequestVote(msg.getSourceNodeId(), rp);
-            case REQUEST_VOTE_RESPONSE -> handleRequestVoteResponse(msg.getSourceNodeId(), rp);
-            case APPEND_ENTRIES -> handleAppendEntries(msg.getSourceNodeId(), rp);
-            case APPEND_ENTRIES_RESPONSE -> handleAppendEntriesResponse(msg.getSourceNodeId(), rp);
-            default -> appLogger.debug("Raft: Unhandled message type: {}", rp.getType());
+        switch (payload.getType()) {
+            case REQUEST_VOTE:
+                handleRequestVote(msg.getSourceNodeId(), payload);
+                break;
+            case REQUEST_VOTE_RESPONSE:
+                handleRequestVoteResponse(msg.getSourceNodeId(), payload);
+                break;
+            case APPEND_ENTRIES:
+                handleAppendEntries(msg.getSourceNodeId(), payload);
+                break;
+            case APPEND_ENTRIES_RESPONSE:
+                handleAppendEntriesResponse(msg.getSourceNodeId(), payload);
+                break;
+            default:
+                appLogger.debug("Raft: Unhandled message type: {}", payload.getType());
+                break;
         }
     }
 

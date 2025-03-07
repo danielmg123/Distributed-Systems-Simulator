@@ -2,6 +2,7 @@ package com.dss.backend.consensus.zab;
 
 import com.dss.backend.consensus.AbstractConsensusAlgorithm;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
+import com.dss.backend.consensus.util.ConsensusUtils;
 import com.dss.backend.messaging.*;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
@@ -100,11 +101,11 @@ public class Zab extends AbstractConsensusAlgorithm {
      */
     @Override
     public void handleMessage(SimulationMessage msg) {
-        if (!(msg.getPayload() instanceof ZabPayload)) {
+        ZabPayload payload = ConsensusUtils.safeCastPayload(msg, ZabPayload.class);
+        if (payload == null) {
             appLogger.info("Node {} received unsupported payload: {}", nodeId, msg.getPayload());
             return;
         }
-        ZabPayload payload = (ZabPayload) msg.getPayload();
         switch (payload.getType()) {
             case PROPOSAL:
                 handlePropose(msg.getSourceNodeId(), payload);
@@ -117,6 +118,7 @@ public class Zab extends AbstractConsensusAlgorithm {
                 break;
             default:
                 appLogger.info("Node {} received unknown Zab message type: {}", nodeId, payload.getType());
+                break;
         }
     }
 
