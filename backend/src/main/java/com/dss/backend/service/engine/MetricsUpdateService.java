@@ -5,6 +5,7 @@ import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.metrics.PerformanceMetricsCollector;
 import com.dss.backend.controller.SimulationWebSocketController;
 
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 public class MetricsUpdateService {
@@ -27,10 +28,12 @@ public class MetricsUpdateService {
      * @param simulationId the simulation identifier
      */
     public void startMetricsUpdates(String simulationId) {
-        scheduler.scheduleAtFixedRate(() -> {
-            MetricsSnapshot snapshot = metricsCollector.getSnapshot();
-            webSocketController.sendMetricsUpdate(simulationId, snapshot);
-        }, 0, 5, TimeUnit.SECONDS);
+        try {
+            scheduler.scheduleAtFixedRate(() -> {
+                MetricsSnapshot snapshot = metricsCollector.getSnapshot();
+                webSocketController.sendMetricsUpdate(simulationId, snapshot);
+            }, 0, 5, TimeUnit.SECONDS);
+        } catch (RejectedExecutionException ignored) {}
     }
 
     /**

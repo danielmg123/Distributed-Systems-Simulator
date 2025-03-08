@@ -167,10 +167,14 @@ public class SimulationService {
     }
 
     public MetricsSnapshot getSimulationMetrics(String simulationId) {
+        // Try to retrieve the orchestrator for the given simulation.
         SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
         if (orchestrator == null) {
-            throw new ResourceNotFoundException("Simulation not found or not running for id: " + simulationId);
+            // If not found (e.g., simulation is stopped), return the snapshot from the shared metrics collector.
+            // This change ensures that we always return a (possibly default) snapshot.
+            return metricsCollector.getSnapshot();
         }
         return orchestrator.getMetricsSnapshot();
     }
+
 }

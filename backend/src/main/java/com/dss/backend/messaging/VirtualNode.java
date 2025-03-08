@@ -1,8 +1,5 @@
 package com.dss.backend.messaging;
 
-import java.util.Map;
-import java.util.concurrent.*;
-
 import com.dss.backend.consensus.ConsensusAlgorithm;
 import com.dss.backend.failure.Heartbeat;
 import com.dss.backend.failure.PhiAccrual;
@@ -13,6 +10,9 @@ import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
 import lombok.Getter;
 import lombok.Setter;
+import java.util.Map;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 public class VirtualNode {
 
@@ -117,15 +117,19 @@ public class VirtualNode {
      * Schedules a periodic task that checks phi values for each neighbor.
      */
     private void startPhiChecker() {
-        phiCheckerFuture = scheduler.scheduleAtFixedRate(() -> {
-            long now = System.currentTimeMillis();
-            for (Map.Entry<String, PhiAccrual> entry : phiDetectors.entrySet()) {
-                double phi = entry.getValue().computePhi(now);
-                if (phi >= phiThreshold) {
-                    appLogger.info("Node {} suspects neighbor {} has failed (phi={})", node.getId(), entry.getKey(), phi);
+        try {
+            phiCheckerFuture = scheduler.scheduleAtFixedRate(() -> {
+                long now = System.currentTimeMillis();
+                for (Map.Entry<String, PhiAccrual> entry : phiDetectors.entrySet()) {
+                    double phi = entry.getValue().computePhi(now);
+                    if (phi >= phiThreshold) {
+                        appLogger.info("Node {} suspects neighbor {} has failed (phi={})", node.getId(), entry.getKey(), phi);
+                    }
                 }
-            }
-        }, 0, 1, TimeUnit.SECONDS);
+            }, 0, 1, TimeUnit.SECONDS);
+        } catch (RejectedExecutionException ex) {
+            // Scheduler is shutdown; do nothing.
+        }
     }
 
     private void stopPhiChecker() {

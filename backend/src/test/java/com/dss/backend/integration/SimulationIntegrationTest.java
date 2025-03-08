@@ -1,0 +1,168 @@
+package com.dss.backend.integration;
+
+import com.dss.backend.config.SimulationProperties;
+import com.dss.backend.dto.SimulationConfigDTO;
+import com.dss.backend.dto.SimulationDTO;
+import com.dss.backend.metrics.MetricsSnapshot;
+import com.dss.backend.model.ConsensusAlgorithmType;
+import com.dss.backend.model.Node;
+import com.dss.backend.model.NodeStatus;
+import com.dss.backend.model.Simulation;
+import com.dss.backend.model.SimulationConfig;
+import com.dss.backend.model.SimulationStatus;
+import com.dss.backend.model.TopologyType;
+import com.dss.backend.repository.NodeRepository;
+import com.dss.backend.repository.SimulationRepository;
+import com.dss.backend.service.SimulationService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.Arrays;
+import java.util.UUID;
+
+import static org.hamcrest.Matchers.containsString;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@SpringBootTest  // Loads the full application context (including MongoDB)
+@AutoConfigureMockMvc
+public class SimulationIntegrationTest {
+
+    @Autowired
+    private SimulationService simulationService;
+
+    @Autowired
+    private SimulationRepository simulationRepository;
+
+    @Autowired
+    private NodeRepository nodeRepository;
+
+    @Autowired
+    private SimulationProperties simulationProperties;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    // Prepare some nodes for the simulation.
+    @BeforeEach
+    public void setUp() {
+        // Clear existing simulation and node data.
+        simulationRepository.deleteAll();
+        nodeRepository.deleteAll();
+
+        // Create 3 active nodes.
+        Node node1 = new Node();
+        node1.setId("node1");
+        node1.setAddress("192.168.1.1");
+        node1.setStatus(NodeStatus.ACTIVE);
+
+        Node node2 = new Node();
+        node2.setId("node2");
+        node2.setAddress("192.168.1.2");
+        node2.setStatus(NodeStatus.ACTIVE);
+
+        Node node3 = new Node();
+        node3.setId("node3");
+        node3.setAddress("192.168.1.3");
+        node3.setStatus(NodeStatus.ACTIVE);
+
+        nodeRepository.saveAll(Arrays.asList(node1, node2, node3));
+    }
+
+    // --- Integration test using the service layer ---
+    @Test
+    public void startAndStopSimulation_IntegrationFlow() throws Exception {
+        // Create a Simulation with configuration.
+        Simulation simulation = new Simulation();
+        simulation.setId(UUID.randomUUID().toString());
+        simulation.setName("Integration Simulation");
+        simulation.setStatus(SimulationStatus.PAUSED);
+        SimulationConfig config = new SimulationConfig();
+        config.setAlgorithmType(ConsensusAlgorithmType.PAXOS);
+        config.setNodeCount(3);
+        config.setTopologyType(TopologyType.MESH);
+        config.setFailurePercentage(0.0); // No automatic failure for this test
+        config.setMetricsToCapture(Arrays.asList("latency", "throughput"));
+        config.setTlsEnabled(false);
+        simulation.setConfig(config);
+        simulationRepository.save(simulation);
+
+        // Run the simulation.
+        simulationService.runSimulation(simulation.getId());
+
+        // Let the simulation run briefly.
+        Thread.sleep(5000);
+
+        // Stop the simulation.
+        simulationService.stopSimulation(simulation.getId());
+
+        // Verify that the simulation status is COMPLETED.
+        Simulation updated = simulationRepository.findById(simulation.getId())
+                .orElseThrow(() -> new RuntimeException("Simulation not found"));
+        assertEquals(SimulationStatus.COMPLETED, updated.getStatus());
+
+        // Verify that metrics are available.
+        MetricsSnapshot snapshot = simulationService.getSimulationMetrics(simulation.getId());
+        assertNotNull(snapshot, "Metrics snapshot should not be null");
+    }
+
+    // --- End-to-end REST endpoints test ---
+    @Test
+    public void restEndpoints_FullFlow() throws Exception {
+        // 1. POST a new Simulation.
+        SimulationDTO simDto = new SimulationDTO();
+        simDto.setName("Full Flow Simulation");
+        SimulationConfigDTO configDto = new SimulationConfigDTO();
+        configDto.setAlgorithmType(ConsensusAlgorithmType.PAXOS);
+        configDto.setNodeCount(3);
+        configDto.setTopologyType(TopologyType.MESH);
+        configDto.setFailurePercentage(10.0);  // Simulate 10% chance of node failure
+        configDto.setMetricsToCapture(Arrays.asList("latency", "throughput"));
+        configDto.setTlsEnabled(false);
+        simDto.setConfig(configDto);
+
+        String simJson = objectMapper.writeValueAsString(simDto);
+
+        String response = mockMvc.perform(post("/api/simulations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(simJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").exists())
+                .andReturn().getResponse().getContentAsString();
+
+        SimulationDTO createdSim = objectMapper.readValue(response, SimulationDTO.class);
+        String simId = createdSim.getId();
+
+        // 2. Run the simulation.
+        mockMvc.perform(post("/api/simulations/" + simId + "/run"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Simulation started with ID: " + simId)));
+
+        // 3. Fail a node.
+        mockMvc.perform(post("/api/simulations/" + simId + "/failNode/node1"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Node node1 failed in simulation " + simId)));
+
+        // 4. Fetch simulation metrics.
+        mockMvc.perform(get("/api/simulations/" + simId + "/metrics"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalMessages").exists());
+
+        // 5. Stop the simulation.
+        mockMvc.perform(post("/api/simulations/" + simId + "/stop"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Simulation stopped for ID: " + simId)));
+    }
+}

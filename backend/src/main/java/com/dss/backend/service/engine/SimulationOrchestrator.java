@@ -14,6 +14,7 @@ import com.dss.backend.model.TopologyType;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 public class SimulationOrchestrator {
 
@@ -71,9 +72,9 @@ public class SimulationOrchestrator {
     /**
      * Starts a periodic task that randomly fails active nodes based on a given failure percentage.
      *
-     * @param simulationId     Simulation identifier.
+     * @param simulationId      Simulation identifier.
      * @param failurePercentage Percentage of nodes to fail.
-     * @param intervalMillis   Interval between failure checks.
+     * @param intervalMillis    Interval between failure checks.
      */
     public void startFailureSimulation(String simulationId, double failurePercentage, int intervalMillis) {
         scheduler.scheduleAtFixedRate(() -> {
@@ -87,7 +88,7 @@ public class SimulationOrchestrator {
                     }
                 }
             }
-        }, intervalMillis, intervalMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }, intervalMillis, intervalMillis, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -124,10 +125,16 @@ public class SimulationOrchestrator {
                 vNode.stop();
             }
         }
+        // Wait briefly to ensure all heartbeat tasks have been cancelled.
+        try {
+            Thread.sleep(1000); // wait 1 second
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         // Shut down the scheduler cleanly.
         scheduler.shutdown();
         try {
-            if (!scheduler.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
                 scheduler.shutdownNow();
             }
         } catch (InterruptedException e) {
