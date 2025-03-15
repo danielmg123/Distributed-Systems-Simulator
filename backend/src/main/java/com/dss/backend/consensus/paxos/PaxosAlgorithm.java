@@ -12,78 +12,169 @@ import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 
 /**
- * PaxosAlgorithm implements the Paxos consensus protocol. It merges information from
- * all PROMISE messages and uses the highest accepted proposal when moving to the accept phase.
+ * Implements the basic Paxos consensus protocol.
  *
- * Refactored to extend AbstractConsensusAlgorithm so that default no-op implementations for methods
- * (such as accept() or commit() where appropriate) are inherited.
+ * <p><strong>Approach:</strong></p>
+ * <ul>
+ *   <li>Each node can act as a <em>Proposer</em>, <em>Acceptor</em>, or <em>Learner</em>.</li>
+ *   <li>The protocol operates in two phases:
+ *     <ul>
+ *       <li><em>Prepare/Promise</em> (Phase 1): A Proposer asks Acceptors to promise not to
+ *       accept proposals below a given proposal number, ensuring the Proposer obtains
+ *       the highest accepted proposal.</li>
+ *       <li><em>Accept/Accepted</em> (Phase 2): Once the Proposer knows the highest
+ *       accepted value (if any), it broadcasts an accept request with its proposal number
+ *       and chosen value; Acceptors respond “ACCEPTED” if they have not promised a higher
+ *       proposal number.</li>
+ *     </ul>
+ *   </li>
+ *   <li>A majority (quorum) of Acceptors must accept a proposal for it to become chosen.</li>
+ * </ul>
  *
- * Also, the message types used for responses have been corrected for consistency;
- * for example, in the accept phase we now send a message with type ACCEPTED.
+ * <p><strong>Key Design Decisions:</strong></p>
+ * <ul>
+ *   <li>We generate proposal numbers by incrementing an atomic counter. In a more advanced
+ *       deployment, we might incorporate unique node IDs or timestamps to ensure global uniqueness.</li>
+ *   <li>Majority threshold is {@code (allNodeIds.size() / 2) + 1}; no dynamic membership changes or reconfiguration
+ *       are handled in this implementation.</li>
+ *   <li>Message types are strongly typed (e.g., {@code PREPARE_REQUEST}, {@code ACCEPT_REQUEST}, etc.)
+ *       with distinct payload objects for clarity.</li>
+ * </ul>
+ *
+ * <p><strong>Known Limitations:</strong></p>
+ * <ul>
+ *   <li>This basic Paxos does not include leader election or Multi-Paxos optimizations (which reduce
+ *       repeated Phase 1 overhead once a stable leader is established).</li>
+ *   <li>No advanced fault handling (e.g., if the Proposer fails mid-protocol, a new Proposer
+ *       must start a higher proposal number and re-run Phase 1).</li>
+ *   <li>There is no concurrency control if multiple nodes simultaneously become Proposers.
+ *       This protocol is safe but may degrade performance in practice.</li>
+ * </ul>
+ *
+ * <p>By extending {@link AbstractConsensusAlgorithm}, we inherit no-op implementations for methods
+ * that Paxos does not use (e.g., certain commit methods). The primary logic is in
+ * {@link #propose(Object)}, {@link #handleMessage(SimulationMessage)}, and the private methods
+ * supporting the <em>prepare</em> and <em>accept</em> phases.</p>
+ *
+ * @author Daniel Morales
  */
 public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
 
+    /** Logger for internal debug and info statements. */
     private final AppLogger appLogger = new DefaultAppLogger(PaxosAlgorithm.class);
 
-    // Local Paxos state for this node.
+    /** Per-node Paxos state: records the highest promise, accepted value, etc. */
     private final PaxosState paxosState;
 
-    // Message router for sending messages between nodes.
+    /** Message router for sending and receiving SimulationMessages between nodes. */
     private final MessageRouter router;
 
-    // List of all participating node IDs.
+    /** All node IDs in the cluster (including this node). */
     private final List<String> allNodeIds;
 
-    // This node's unique ID.
+    /** The local node's ID, used for logging and routing decisions. */
     private final String myNodeId;
 
-    // Helper for broadcasting messages (excludes sending to self).
+    /** Helper object to broadcast messages to all nodes except self. */
     private final ConsensusBroadcaster broadcaster;
 
-    // Local counter for generating unique proposal numbers.
+    /** An atomic counter to generate unique proposal numbers. */
     private final AtomicInteger proposalCounter = new AtomicInteger(0);
 
-    // Majority count needed for quorum.
+    /**
+     * The majority threshold needed for quorum. In a cluster of size N,
+     * majority is (N/2 + 1).
+     */
     private final int majority;
 
-    // Map of proposal number to its associated proposer state.
+    /**
+     * Tracks the ProposerState for each proposal number, so the local node
+     * can manage multiple proposals concurrently if needed (though typically
+     * they'd be handled sequentially).
+     */
     private final ConcurrentHashMap<Integer, ProposerState> proposalStateMap = new ConcurrentHashMap<>();
 
-    // Map for counting ACCEPTED responses for each proposal.
+    /**
+     * Tracks how many ACCEPTED responses we've received for each proposal number
+     * in Phase 2, so we know when we reach quorum.
+     */
     private final ConcurrentHashMap<Integer, Integer> acceptCountMap = new ConcurrentHashMap<>();
 
+    /**
+     * Constructs a PaxosAlgorithm for this node.
+     *
+     * @param myNodeId   the local node ID
+     * @param allNodeIds list of all participating node IDs (including this node)
+     * @param router     the shared message router for sending and receiving messages
+     */
     public PaxosAlgorithm(String myNodeId, List<String> allNodeIds, MessageRouter router) {
         this.myNodeId = myNodeId;
         this.allNodeIds = allNodeIds;
         this.router = router;
         this.paxosState = new PaxosState(myNodeId);
         this.broadcaster = new ConsensusBroadcaster(router, myNodeId);
+        // For N nodes, the majority threshold is (N/2 + 1).
         this.majority = (allNodeIds.size() / 2) + 1;
     }
 
+    /**
+     * Initiates Paxos by sending a PREPARE_REQUEST to each node
+     * (i.e., beginning Phase 1: "Prepare").
+     *
+     * @param value the value/command we want to propose
+     */
     @Override
     public void propose(Object value) {
-        // Generate a new proposal number and create a new proposer state.
+        // Generate a new proposal number: must be strictly larger
+        // than any we have used so far.
         int proposalNumber = generateNextProposalNumber();
+
+        // Create a new ProposerState to track how many PROMISEs we've received, etc.
         proposalStateMap.put(proposalNumber, new ProposerState(value));
+
+        // Broadcast the PREPARE_REQUEST (Phase 1) to all nodes.
         broadcastPrepareRequest(proposalNumber, value);
     }
 
+    /**
+     * Accept is not called directly by the Proposer in standard Paxos.
+     * Instead, "accept" decisions are triggered by receiving an ACCEPT_REQUEST
+     * message (see {@link #onAcceptRequest(String, PaxosPayload)}).
+     *
+     * @param proposal ignored in this implementation
+     * @return always false
+     */
     @Override
     public boolean accept(Object proposal) {
         // Not directly used in Paxos – acceptance is handled via message processing.
         return false;
     }
 
+    /**
+     * Marks the chosen value in our local PaxosState and logs it.
+     * Typically, once a node learns a proposal is chosen, it can apply that
+     * value to its local state machine.
+     *
+     * @param value the chosen value
+     */
     @Override
     public void commit(Object value) {
-        // Mark the chosen value in our Paxos state.
+        // Mark the chosen value in the PaxosState so this node
+        // knows it has been committed.
         paxosState.setChosenValue(value);
         appLogger.info("Node {} has COMMITTED value: {}", myNodeId, value);
     }
 
+    /**
+     * Main entry point for handling messages from other nodes.
+     * Based on the message type, we dispatch to the appropriate
+     * Phase 1 (prepare/promise) or Phase 2 (accept/accepted) handler.
+     *
+     * @param msg the incoming message
+     */
     @Override
     public void handleMessage(SimulationMessage msg) {
+        // Safely cast the payload to PaxosPayload (or skip if invalid).
         PaxosPayload payload = ConsensusUtils.safeCastPayload(msg, PaxosPayload.class);
         if (payload == null) {
             return;
@@ -102,7 +193,7 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
                 onAccepted(msg.getSourceNodeId(), payload);
                 break;
             default:
-                // Ignore unhandled message types.
+                // For Paxos, we ignore any other message types (heartbeat, etc.).
                 break;
         }
     }
@@ -110,60 +201,98 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
     // ---------------------- Phase 1: Prepare / Promise ----------------------
 
     /**
-     * Broadcasts a PREPARE_REQUEST message to all nodes.
+     * Broadcasts a PREPARE_REQUEST message (start of Phase 1) to all nodes.
+     *
+     * @param proposalNumber unique proposal number for this attempt
+     * @param originalValue  the value we eventually want to propose
      */
     private void broadcastPrepareRequest(int proposalNumber, Object originalValue) {
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
         payload.setProposedValue(originalValue);
+
+        // Send to everyone except self.
         broadcaster.broadcast(MessageType.PREPARE_REQUEST, payload, ProtocolType.PAXOS);
     }
 
     /**
-     * Handles an incoming PREPARE_REQUEST.
-     * If the proposal number is greater than or equal to our promised ID, we promise to accept
-     * no proposals with a lower number.
+     * Handles an incoming PREPARE_REQUEST from a Proposer.
+     * <p>
+     * If the incoming proposal number is >= the highest we have promised,
+     * we "promise" not to accept proposals with lower numbers.
+     * We then respond with a PROMISE message containing our current accepted proposal
+     * (if any), so the Proposer can pick the highest accepted value.
+     *
+     * @param sourceNode the node that sent the request
+     * @param payload    the PaxosPayload with the proposal number and potential value
      */
     private void onPrepareRequest(String sourceNode, PaxosPayload payload) {
         int proposalNumber = payload.getProposalNumber();
+
+        // If the incoming proposalNumber is >= promisedId, we
+        // promise not to accept proposals with lower IDs.
         if (proposalNumber >= paxosState.getPromisedId()) {
             paxosState.setPromisedId(proposalNumber);
 
-            // Prepare a PROMISE response that includes any previously accepted proposal.
+            // We respond with a PROMISE that includes the highest accepted proposal
+            // we already have (acceptedId and acceptedValue), if any.
             PaxosPayload reply = new PaxosPayload();
             reply.setProposalNumber(proposalNumber);
             reply.setAcceptedId(paxosState.getAcceptedId());
             reply.setAcceptedValue(paxosState.getAcceptedValue());
 
+            // Send PROMISE back to the Proposer.
             SimulationMessage promiseMsg = SimulationMessageFactory.createMessage(
-                    myNodeId, sourceNode, MessageType.PROMISE, reply, ProtocolType.PAXOS);
+                    myNodeId,
+                    sourceNode,
+                    MessageType.PROMISE,
+                    reply,
+                    ProtocolType.PAXOS);
             router.messageSent(promiseMsg);
         }
-        // Optionally, else send a rejection.
+        // If the proposalNumber < promisedId, we do nothing
+        // (implicitly "reject"), or we could explicitly send a rejection.
     }
 
     /**
-     * Processes an incoming PROMISE message.
-     * Once a quorum is reached, proceeds to the accept phase.
+     * Processes a PROMISE message from an Acceptor (Phase 1).
+     * <p>
+     * We track how many PROMISE messages we've received for the specified proposal number.
+     * Once we hit the majority threshold, we proceed to Phase 2 by broadcasting
+     * an ACCEPT_REQUEST with the "best" accepted value from all PROMISES.
+     *
+     * @param sourceNodeId the node that sent the PROMISE
+     * @param payload       includes the proposalNumber, acceptedId, and acceptedValue
      */
     private void onPromise(String sourceNodeId, PaxosPayload payload) {
         int proposalNumber = payload.getProposalNumber();
+
+        // Retrieve the ProposerState for this proposal. If null, we might have
+        // moved on or it's a stale PROMISE, so we ignore it.
         ProposerState state = proposalStateMap.get(proposalNumber);
         if (state == null) {
-            // Ignore stale or duplicate promises.
+            // Ignore stale or duplicate PROMISE messages.
             return;
         }
+
+        // Bump the count of how many PROMISEs we have for this proposal number.
         state.incrementPromiseCount();
+        // If the Acceptor had previously accepted a higher proposal, record it
+        // in highestAcceptedId/highestAcceptedValue.
         state.updateHighestAccepted(payload.getAcceptedId(), payload.getAcceptedValue());
 
         appLogger.info("Received PROMISE from {} for proposal #{} (count = {})",
                 sourceNodeId, proposalNumber, state.getPromiseCount());
 
-        // Once quorum is reached, decide which value to propose.
+        // Once we reach the majority, we move to Accept phase.
         if (state.getPromiseCount() >= majority) {
+            // Choose whichever value has the highest acceptedId from the PROMISEs,
+            // or if none, use the original value we wanted to propose.
             Object valueToAccept = (state.getHighestAcceptedValue() != null)
                     ? state.getHighestAcceptedValue()
                     : state.getOriginalValue();
+
+            // Broadcast ACCEPT_REQUEST for Phase 2.
             broadcastAcceptRequest(proposalNumber, valueToAccept);
         }
     }
@@ -171,66 +300,103 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
     // ---------------------- Phase 2: Accept / Accepted ----------------------
 
     /**
-     * Broadcasts an ACCEPT_REQUEST message to all nodes.
+     * Broadcasts an ACCEPT_REQUEST message (Phase 2) to all nodes.
+     * This requests that Acceptors accept our proposal number and chosen value.
+     *
+     * @param proposalNumber the proposal number we're using
+     * @param value          the value to accept
      */
     private void broadcastAcceptRequest(int proposalNumber, Object value) {
-        // Reset the count for ACCEPTED responses.
+        // Initialize the acceptCount for this proposal to 0.
         acceptCountMap.put(proposalNumber, 0);
 
         PaxosPayload payload = new PaxosPayload();
         payload.setProposalNumber(proposalNumber);
         payload.setProposedValue(value);
 
-        // Broadcast ACCEPT_REQUEST to all nodes.
+        // Send ACCEPT_REQUEST to every node, including ourselves
+        // (though typically we might skip self if we already accept implicitly).
         for (String nodeId : allNodeIds) {
             SimulationMessage acceptRequestMsg = SimulationMessageFactory.createMessage(
-                    myNodeId, nodeId, MessageType.ACCEPT_REQUEST, payload, ProtocolType.PAXOS);
+                    myNodeId,
+                    nodeId,
+                    MessageType.ACCEPT_REQUEST,
+                    payload,
+                    ProtocolType.PAXOS
+            );
             router.messageSent(acceptRequestMsg);
         }
     }
 
     /**
      * Handles an incoming ACCEPT_REQUEST.
-     * If the proposal number is acceptable, the node updates its state and sends back an ACCEPTED message.
+     * <p>
+     * If the proposalNumber is >= the highest we have promised, we accept
+     * by updating our PaxosState (acceptedId, acceptedValue) and sending back ACCEPTED.
+     * Otherwise, we reject (do nothing or log a message).
+     *
+     * @param sourceNode the node that sent the ACCEPT_REQUEST
+     * @param payload    includes the proposalNumber and the proposedValue
      */
     private void onAcceptRequest(String sourceNode, PaxosPayload payload) {
         int proposalNumber = payload.getProposalNumber();
+
+        // If the proposalNumber is >= our promisedId, accept it.
         if (proposalNumber >= paxosState.getPromisedId()) {
             paxosState.setAcceptedId(proposalNumber);
             paxosState.setAcceptedValue(payload.getProposedValue());
 
-            // Create an ACCEPTED response with the correct message type.
+            // Construct an ACCEPTED message to confirm our acceptance to the proposer.
             PaxosPayload acceptedPayload = new PaxosPayload();
             acceptedPayload.setProposalNumber(proposalNumber);
             acceptedPayload.setProposedValue(payload.getProposedValue());
 
             SimulationMessage acceptedMsg = SimulationMessageFactory.createMessage(
-                    myNodeId, sourceNode, MessageType.ACCEPTED, acceptedPayload, ProtocolType.PAXOS);
+                    myNodeId,
+                    sourceNode,
+                    MessageType.ACCEPTED,
+                    acceptedPayload,
+                    ProtocolType.PAXOS
+            );
             router.messageSent(acceptedMsg);
+
             appLogger.info("Accepted proposal #{} from {}", proposalNumber, sourceNode);
         } else {
-            appLogger.info("Rejected ACCEPT_REQUEST for proposal #{} (promisedId = {})", proposalNumber, paxosState.getPromisedId());
+            // If it's below our promisedId, we effectively "reject".
+            appLogger.info("Rejected ACCEPT_REQUEST for proposal #{} (promisedId = {})",
+                    proposalNumber, paxosState.getPromisedId());
         }
     }
 
     /**
-     * Processes an incoming ACCEPTED message.
-     * When a quorum of ACCEPTED messages is reached, the proposal is committed.
+     * Processes an ACCEPTED response for our proposal.
+     * <p>
+     * Once a quorum of ACCEPTED responses is reached, we commit the value
+     * and mark it as chosen in our PaxosState.
+     *
+     * @param sourceNode the node that sent the ACCEPTED response
+     * @param payload    includes the proposalNumber and the proposedValue that was accepted
      */
     private void onAccepted(String sourceNode, PaxosPayload payload) {
         int proposalNumber = payload.getProposalNumber();
+
+        // Get the current count of ACCEPTED responses for this proposal.
         Integer oldCount = acceptCountMap.get(proposalNumber);
         if (oldCount == null) {
-            // Ignore stale or unexpected responses.
+            // Possibly a stale or irrelevant ACCEPTED message.
             return;
         }
+
+        // Increment the count and update the map.
         int newCount = oldCount + 1;
         acceptCountMap.put(proposalNumber, newCount);
 
-        // If a majority of nodes have accepted the proposal, commit the value.
+        // If we've reached the majority threshold, commit the value.
         if (newCount >= majority) {
             commit(payload.getProposedValue());
-            // Optionally clean up data structures related to the proposal.
+
+            // Optionally, we could remove references to that proposal from
+            // proposalStateMap and acceptCountMap for cleanup.
         }
     }
 
@@ -238,6 +404,10 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
 
     /**
      * Generates a unique proposal number by incrementing a local counter.
+     * This ensures that each new proposal from this node is strictly greater
+     * than any prior proposals from the same node.
+     *
+     * @return the next unique proposal number
      */
     private int generateNextProposalNumber() {
         return proposalCounter.incrementAndGet();
