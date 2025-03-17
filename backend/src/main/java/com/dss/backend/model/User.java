@@ -12,7 +12,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
  *   <li>{@code username} - The unique login name.</li>
  *   <li>{@code password} - A BCrypt-hashed password (never stored in plaintext).</li>
  *   <li>{@code role} - Typically "USER" or "ADMIN". In Spring Security,
- *       you might see "ROLE_USER" or "ROLE_ADMIN".</li>
+ *       we might see "ROLE_USER" or "ROLE_ADMIN".</li>
  * </ul>
  */
 @Document(collection = "users")

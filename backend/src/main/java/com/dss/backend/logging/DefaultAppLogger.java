@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>Automatic logging framework resolution via SLF4J.</li>
  *   <li>Placeholder-based logging (e.g. {@code logger.info("Message: {}", value)}).</li>
- *   <li>Consistent usage across the application, so you can switch implementations if needed.</li>
+ *   <li>Consistent usage across the application, so we can switch implementations if needed.</li>
  * </ul>
  */
 public class DefaultAppLogger implements AppLogger {

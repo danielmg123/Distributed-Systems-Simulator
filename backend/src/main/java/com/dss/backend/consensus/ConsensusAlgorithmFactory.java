@@ -77,7 +77,7 @@ public class ConsensusAlgorithmFactory {
             case MULTI_PAXOS:
                 MultiPaxos multiPaxos = new MultiPaxos(nodeId, router, simulationProperties, scheduler);
                 multiPaxos.setTotalNodes(allNodeIds.size());
-                // For simplicity, pick the first node as leader, or do your own logic
+                // For simplicity, pick the first node as leader
                 multiPaxos.setLeader(allNodeIds.get(0).equals(nodeId));
                 return multiPaxos;
             case VIEW_STAMPED_REPLICATION:
