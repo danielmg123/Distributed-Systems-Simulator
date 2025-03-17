@@ -5,30 +5,62 @@ import com.dss.backend.engine.Scheduler;
 import com.dss.backend.exception.ResourceNotFoundException;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
-import com.dss.backend.model.Event;
-import com.dss.backend.model.EventType;
-import com.dss.backend.model.Node;
-import com.dss.backend.model.Simulation;
-import com.dss.backend.model.SimulationStatus;
-import com.dss.backend.repository.NodeRepository;
-import com.dss.backend.repository.SimulationRepository;
 import com.dss.backend.messaging.MessageRouter;
-import com.dss.backend.service.engine.NodeInitializationService;
-import com.dss.backend.service.engine.MetricsUpdateService;
-import com.dss.backend.service.engine.EventLoggerService;
-import com.dss.backend.service.engine.SimulationOrchestrator;
-import com.dss.backend.consensus.ConsensusAlgorithmFactory;
-import com.dss.backend.metrics.DefaultMetricsCollector;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.metrics.PerformanceMetricsCollector;
+import com.dss.backend.metrics.DefaultMetricsCollector;
+import com.dss.backend.model.*;
+import com.dss.backend.repository.NodeRepository;
+import com.dss.backend.repository.SimulationRepository;
+import com.dss.backend.service.engine.*;
+import com.dss.backend.consensus.ConsensusAlgorithmFactory;
 import com.dss.backend.config.SimulationProperties;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * <p>
+ * The {@code SimulationService} provides high-level orchestration for creating,
+ * running, and stopping simulations, as well as retrieving simulation metrics.
+ * </p>
+ *
+ * <p>
+ * <strong>Business Logic & Responsibilities:</strong>
+ * <ul>
+ *   <li>Manages {@code Simulation} objects (CRUD) in the database.</li>
+ *   <li>Coordinates the start and stop of simulations by delegating to a
+ *       {@link SimulationOrchestrator} object.</li>
+ *   <li>Handles node failures in the context of a running simulation.</li>
+ *   <li>Provides aggregated performance metrics for each simulation.</li>
+ * </ul>
+ * </p>
+ *
+ * <p>
+ * <strong>Side Effects & Detailed Behavior:</strong>
+ * <ul>
+ *   <li><strong>Orchestrator Management:</strong>
+ *       The service keeps an in-memory map of simulation IDs to their active orchestrators.
+ *       When a simulation is run, an orchestrator is created, started, and stored in this map.
+ *       When a simulation is stopped, the orchestrator is removed, and the resources
+ *       are freed/shutdown.</li>
+ *   <li><strong>Event Logging:</strong>
+ *       This service optionally logs events (e.g., "Simulation started") to
+ *       the front end or a database. The event logging is typically handled by
+ *       an {@link EventLoggerService}, which is used inside the orchestrator classes.</li>
+ *   <li><strong>Metrics Collector:</strong>
+ *       We keep a shared {@link PerformanceMetricsCollector} that accumulates
+ *       data about message latencies, proposals, commits, etc. The service can query
+ *       these metrics via {@link #getSimulationMetrics(String)} to present a snapshot
+ *       to the UI.</li>
+ * </ul>
+ * </p>
+ */
 @Service
 public class SimulationService {
 
@@ -43,57 +75,105 @@ public class SimulationService {
     @Autowired
     private SimulationWebSocketController simulationWebSocketController;
 
-    // Use the scheduler bean provided by AppConfig
+    /**
+     * A scheduler (from {@code AppConfig}) used for scheduling time-based tasks
+     * such as heartbeats, failure simulations, etc.
+     */
     @Autowired
     private Scheduler scheduler;
 
-    // Inject simulation properties to pass to child services.
+    /**
+     * Global simulation properties that define thread pool sizes, timeouts, etc.
+     */
     @Autowired
     private SimulationProperties simulationProperties;
 
-    // Map of simulation IDs to their respective orchestrators.
+    /**
+     * In-memory mapping of simulation IDs to their active orchestrators.
+     * Once a simulation is started, an {@link SimulationOrchestrator} is created and stored here.
+     * When the simulation is stopped, the orchestrator is removed.
+     */
     private final Map<String, SimulationOrchestrator> orchestrators = new ConcurrentHashMap<>();
 
-    // Shared metrics collector instance.
+    /**
+     * A shared performance metrics collector to accumulate stats across simulations.
+     */
     private final PerformanceMetricsCollector metricsCollector = new DefaultMetricsCollector();
 
+    /**
+     * <p>Retrieves all simulations stored in the database.</p>
+     *
+     * @return list of all {@link Simulation} entities.
+     */
     public List<Simulation> getAllSimulations() {
         return simulationRepository.findAll();
     }
 
+    /**
+     * <p>Locates a single simulation by ID, or throws an exception if not found.</p>
+     *
+     * @param id the unique database ID of the simulation.
+     * @return the retrieved {@link Simulation}.
+     * @throws ResourceNotFoundException if the simulation does not exist.
+     */
     public Simulation getSimulationByIdOrThrow(String id) {
         return simulationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + id));
     }
 
+    /**
+     * <p>Saves a new or existing simulation record in the database.</p>
+     *
+     * @param simulation the simulation data to be persisted.
+     * @return the saved {@link Simulation}, including a database-assigned ID if it was new.
+     */
     public Simulation saveSimulation(Simulation simulation) {
         return simulationRepository.save(simulation);
     }
 
+    /**
+     * <p>Deletes a simulation record from the database, if found. Otherwise, throws an exception.</p>
+     *
+     * @param id the ID of the simulation to remove.
+     * @throws ResourceNotFoundException if the simulation does not exist.
+     */
     public void deleteSimulation(String id) {
         simulationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + id));
         simulationRepository.deleteById(id);
     }
 
+    /**
+     * <p>Starts (runs) a simulation:
+     * <ol>
+     *   <li>Find the simulation by ID in the database.</li>
+     *   <li>Retrieve all {@link Node} objects to use in that simulation.</li>
+     *   <li>Create a new {@link SimulationOrchestrator} and register it in the {@link #orchestrators} map.</li>
+     *   <li>Initialize the orchestrator with the node list and the simulation config.</li>
+     *   <li>Mark the simulation's status as RUNNING and save it back to the database.</li>
+     *   <li>Finally, the orchestrator is told to actually start (begin heartbeats, failure checks, etc.).</li>
+     *   <li>If a failure percentage is given, sets up failure simulation logic as well.</li>
+     * </ol>
+     * </p>
+     *
+     * @param simulationId the unique ID of the simulation to run.
+     * @throws ResourceNotFoundException if the simulation does not exist.
+     */
     public void runSimulation(String simulationId) {
-        // 1. Retrieve the simulation.
+        // 1. Retrieve the simulation from the database
         Simulation simulation = simulationRepository.findById(simulationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + simulationId));
 
-        // 2. Retrieve all nodes participating.
+        // 2. Retrieve all Node entities that will participate in the simulation
         List<Node> nodes = nodeRepository.findAll();
 
-        // 3. Create a shared MessageRouter.
+        // 3. Set up the shared router, consensus factory, and supporting services for the orchestrator
         MessageRouter router = new MessageRouter();
-
-        // 4. Instantiate services using injected scheduler and properties.
         ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(router, scheduler, simulationProperties);
         NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler, consensusFactory, simulationProperties);
         MetricsUpdateService metricsUpdateService = new MetricsUpdateService(metricsCollector, simulationWebSocketController, scheduler);
         EventLoggerService eventLoggerService = new EventLoggerService(simulationWebSocketController);
 
-        // 5. Create the SimulationOrchestrator.
         SimulationOrchestrator orchestrator = new SimulationOrchestrator(
                 router,
                 scheduler,
@@ -102,56 +182,54 @@ public class SimulationService {
                 eventLoggerService
         );
 
-        // 6. Initialize simulation nodes.
+        // 4. Initialize nodes in the orchestrator
         orchestrator.initializeSimulationNodes(nodes, simulation.getConfig(), simulation.getConfig().getTopologyType());
 
-        // 7. Store the orchestrator.
+        // 5. Store the orchestrator in our map for future reference (failNode, stop, etc.)
         orchestrators.put(simulationId, orchestrator);
 
-        // 8. Compute and log topology mapping if applicable.
-        if (simulation.getConfig() != null && simulation.getConfig().getTopologyType() != null) {
-            Map<String, List<String>> neighborMapping = orchestrator.computeTopologyMapping(nodes, simulation.getConfig().getTopologyType());
-            appLogger.info("Computed neighbor mapping: {}", neighborMapping);
-        }
-
-        // 9. Update simulation status to RUNNING.
+        // 6. Update the simulation status to RUNNING and save
         simulation.setStatus(SimulationStatus.RUNNING);
         simulationRepository.save(simulation);
 
-        // 10. Start simulation orchestration.
+        // 7. Start the simulation orchestration
         orchestrator.startSimulation(simulationId);
 
-        // 11. Log and broadcast a "simulation started" event.
-        Event startEvent = new Event();
-        startEvent.setType(EventType.SIMULATION_STARTED);
-        startEvent.setDetails("Simulation has started.");
-        startEvent.setTimestamp(LocalDateTime.now());
-        simulationWebSocketController.sendEventUpdate(simulationId, eventLoggerService.mapEventToDTO(startEvent));
-        eventLoggerService.logEvent(simulationId, startEvent.getDetails(), startEvent.getType());
-
-        // 12. Optionally, if a failure percentage is specified, start failure simulation.
+        // 8. If a failure percentage is configured, start a failure simulation
         if (simulation.getConfig() != null) {
             double failurePercentage = simulation.getConfig().getFailurePercentage();
             if (failurePercentage > 0) {
-                // Here we use a fixed interval (5000 ms) but this could be externalized as well.
+                // e.g., every 5000 ms, random nodes may fail
                 orchestrator.startFailureSimulation(simulationId, failurePercentage, 5000);
                 appLogger.info("Started failure simulation with {}% failure rate.", failurePercentage);
 
-                Event failureEvent = new Event();
-                failureEvent.setType(EventType.FAILURE_SIMULATION_STARTED);
-                failureEvent.setDetails("Failure simulation started with " + failurePercentage + "% failure rate.");
-                failureEvent.setTimestamp(LocalDateTime.now());
-                simulationWebSocketController.sendEventUpdate(simulationId, eventLoggerService.mapEventToDTO(failureEvent));
-                eventLoggerService.logEvent(simulationId, failureEvent.getDetails(), failureEvent.getType());
+                // Event logs (the orchestrator also logs events, so we could do it here or in orchestrator)
             }
         }
     }
 
+    /**
+     * <p>Stops (ends) the simulation and removes its orchestrator from memory.
+     * <ol>
+     *   <li>Look up the orchestrator in the map by {@code simulationId}.</li>
+     *   <li>Invoke {@code stopSimulation(...)} on it, which halts nodes, heartbeats, etc.</li>
+     *   <li>Remove it from the map to free resources.</li>
+     *   <li>Update the simulation status to COMPLETED and save to the database.</li>
+     * </ol>
+     * </p>
+     *
+     * @param simulationId the ID of the simulation to stop.
+     */
     public void stopSimulation(String simulationId) {
+        // Retrieve the orchestrator if it exists
         SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
         if (orchestrator != null) {
+            // Stop all node processes, heartbeats, scheduled tasks, etc.
             orchestrator.stopSimulation(simulationId);
+            // Remove from map
             orchestrators.remove(simulationId);
+
+            // Mark simulation as COMPLETED in the database
             Simulation simulation = simulationRepository.findById(simulationId)
                     .orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + simulationId));
             simulation.setStatus(SimulationStatus.COMPLETED);
@@ -159,22 +237,48 @@ public class SimulationService {
         }
     }
 
+    /**
+     * <p>Fails a specific node within a simulation, typically used
+     * to simulate node crashes on demand.</p>
+     *
+     * <p>This updates the node's status in memory (orchestrator) to FAILED
+     * and triggers any event logging or related side effects in the orchestrator.
+     * It does not necessarily remove the node from the DB, but marks it as failed
+     * for the simulation run.</p>
+     *
+     * @param simulationId the ID of the running simulation.
+     * @param nodeId the node to be forcibly failed.
+     */
     public void failNode(String simulationId, String nodeId) {
         SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
         if (orchestrator != null) {
             orchestrator.failNode(simulationId, nodeId);
         }
+        // If the simulation orchestrator does not exist (simulation not running),
+        // we do nothing or could log a warning.
     }
 
+    /**
+     * <p>Retrieves performance metrics for the specified simulation, such as message counts,
+     * latencies, proposals, and commits.</p>
+     *
+     * <p>
+     * If the simulation is running, we fetch the snapshot from its orchestrator's
+     * {@link MetricsUpdateService}. Otherwise, we return a snapshot from the shared
+     * collector (which may be the default or last known data if the simulation is stopped).
+     * </p>
+     *
+     * @param simulationId the unique ID of the simulation.
+     * @return a snapshot of metrics data relevant to that simulation.
+     */
     public MetricsSnapshot getSimulationMetrics(String simulationId) {
-        // Try to retrieve the orchestrator for the given simulation.
+        // Attempt to retrieve orchestrator for the given simulation
         SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
         if (orchestrator == null) {
-            // If not found (e.g., simulation is stopped), return the snapshot from the shared metrics collector.
-            // This change ensures that we always return a (possibly default) snapshot.
+            // e.g., simulation might be stopped. We fall back to the shared collector's snapshot
             return metricsCollector.getSnapshot();
         }
+        // If running, orchestrator returns real-time data
         return orchestrator.getMetricsSnapshot();
     }
-
 }
