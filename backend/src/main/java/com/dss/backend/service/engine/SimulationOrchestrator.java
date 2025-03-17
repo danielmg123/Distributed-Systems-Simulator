@@ -16,6 +16,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * High-level coordinator that orchestrates the simulation lifecycle:
+ * <ul>
+ *   <li>Initializes nodes (via {@link NodeInitializationService}).</li>
+ *   <li>Starts periodic metrics updates (via {@link MetricsUpdateService}).</li>
+ *   <li>Manages failure simulations (random node failures) at regular intervals.</li>
+ *   <li>Stops the simulation gracefully, ensuring all nodes are shut down
+ *       and scheduled tasks are canceled.</li>
+ * </ul>
+ *
+ * <p>This class does <em>not</em> persist data or manage the simulation’s domain state
+ * in a repository. Rather, it provides an in-memory coordination layer to get all
+ * simulation components working in concert.
+ */
 public class SimulationOrchestrator {
 
     private final AppLogger appLogger = new DefaultAppLogger(SimulationOrchestrator.class);
@@ -26,10 +40,22 @@ public class SimulationOrchestrator {
     private final MetricsUpdateService metricsUpdateService;
     private final EventLoggerService eventLoggerService;
 
-    // Map of nodeId -> VirtualNode
+    // A map from node ID -> the in-memory VirtualNode instance
     private Map<String, VirtualNode> nodeMap;
+
+    // Optionally used to store adjacency relationships or neighbor lists if the topology is not fully mesh.
     private Map<String, List<String>> topologyMapping;
 
+    /**
+     * Constructs an orchestrator with references to the main services used
+     * for node setup, metrics, event logging, and scheduling.
+     *
+     * @param messageRouter            the central message router
+     * @param scheduler                shared scheduler for recurring tasks
+     * @param nodeInitializationService configures and starts up VirtualNodes
+     * @param metricsUpdateService     manages sending metrics to the UI
+     * @param eventLoggerService       records/logs notable simulation events
+     */
     public SimulationOrchestrator(MessageRouter messageRouter,
                                   Scheduler scheduler,
                                   NodeInitializationService nodeInitializationService,
@@ -43,7 +69,12 @@ public class SimulationOrchestrator {
     }
 
     /**
-     * Initializes the simulation nodes and computes the topology (if applicable).
+     * Creates and starts virtual nodes for each domain {@link Node} provided.
+     * If a topology is specified, it also computes neighbor relationships.
+     *
+     * @param nodes        the list of node definitions
+     * @param config       simulation config (consensus algorithm, etc.)
+     * @param topologyType ring, mesh, star, etc.
      */
     public void initializeSimulationNodes(List<Node> nodes, SimulationConfig config, TopologyType topologyType) {
         nodeMap = nodeInitializationService.initializeNodes(nodes, config, topologyType);
@@ -54,15 +85,23 @@ public class SimulationOrchestrator {
     }
 
     /**
-     * Computes the topology mapping based on the provided nodes and topology type.
+     * Convenience method for external callers to compute a topology
+     * without necessarily initializing nodes. Useful for debugging or
+     * logging the ring/mesh relationships.
+     *
+     * @param nodes        the node list
+     * @param topologyType the chosen topology type
+     * @return a map of node IDs -> list of neighbor node IDs
      */
     public Map<String, List<String>> computeTopologyMapping(List<Node> nodes, TopologyType topologyType) {
         return TopologyPlacer.assignNeighbors(topologyType, nodes);
     }
 
     /**
-     * Starts the simulation by starting metrics updates and logging the simulation start.
-     * (VirtualNodes were already started during initialization.)
+     * Starts the simulation by initiating periodic metrics updates and
+     * logging an event that the simulation has started.
+     *
+     * @param simulationId the unique identifier for the simulation run
      */
     public void startSimulation(String simulationId) {
         metricsUpdateService.startMetricsUpdates(simulationId);
@@ -70,54 +109,69 @@ public class SimulationOrchestrator {
     }
 
     /**
-     * Starts a periodic task that randomly fails active nodes based on a given failure percentage.
+     * Periodically attempts to fail a subset of nodes at random, simulating
+     * partial failures. The random chance is determined by {@code failurePercentage}.
      *
-     * @param simulationId      Simulation identifier.
-     * @param failurePercentage Percentage of nodes to fail.
-     * @param intervalMillis    Interval between failure checks.
+     * @param simulationId      unique ID for the simulation
+     * @param failurePercentage chance (0-100) that an active node will fail on each check
+     * @param intervalMillis    how often to attempt failing nodes
      */
     public void startFailureSimulation(String simulationId, double failurePercentage, int intervalMillis) {
         scheduler.scheduleAtFixedRate(() -> {
-            for (VirtualNode vNode : nodeMap.values()) {
-                if (vNode.getNodeStatus().equals(com.dss.backend.model.NodeStatus.ACTIVE)) {
-                    double rand = Math.random() * 100;
-                    if (rand < failurePercentage) {
-                        String failedNodeId = vNode.getNodeId();
-                        vNode.failNode();
-                        eventLoggerService.logEvent(simulationId, "Node " + failedNodeId + " has failed automatically.", EventType.NODE_FAILED);
+                    for (VirtualNode vNode : nodeMap.values()) {
+                        if (vNode.getNodeStatus().equals(com.dss.backend.model.NodeStatus.ACTIVE)) {
+                            double rand = Math.random() * 100;
+                            if (rand < failurePercentage) {
+                                String failedNodeId = vNode.getNodeId();
+                                vNode.failNode();
+                                eventLoggerService.logEvent(
+                                        simulationId,
+                                        "Node " + failedNodeId + " has failed automatically.",
+                                        EventType.NODE_FAILED
+                                );
+                            }
+                        }
                     }
-                }
-            }
-        }, intervalMillis, intervalMillis, TimeUnit.MILLISECONDS);
+                },
+                intervalMillis,
+                intervalMillis,
+                TimeUnit.MILLISECONDS);
     }
 
     /**
-     * Fails a specific node.
+     * Allows an external caller to fail a specific node on demand,
+     * simulating a user-induced failure.
      *
-     * @param simulationId Simulation identifier.
-     * @param nodeId       ID of the node to fail.
+     * @param simulationId ID of the simulation
+     * @param nodeId       ID of the node to fail
      */
     public void failNode(String simulationId, String nodeId) {
         VirtualNode vNode = nodeMap.get(nodeId);
         if (vNode != null) {
             vNode.failNode();
-            eventLoggerService.logEvent(simulationId, "Node " + nodeId + " has been failed manually.", EventType.NODE_FAILED);
+            eventLoggerService.logEvent(
+                    simulationId,
+                    "Node " + nodeId + " has been failed manually.",
+                    EventType.NODE_FAILED
+            );
         }
     }
 
     /**
-     * Retrieves the current metrics snapshot.
+     * Fetches the latest metrics from the {@link MetricsUpdateService}.
+     * Typically, this is polled or displayed in the UI.
      *
-     * @return MetricsSnapshot containing current simulation performance data.
+     * @return the current metrics snapshot
      */
     public MetricsSnapshot getMetricsSnapshot() {
         return metricsUpdateService.getMetricsSnapshot();
     }
 
     /**
-     * Stops the simulation by stopping all VirtualNodes and shutting down the scheduler.
+     * Stops the simulation by halting all virtual nodes (heartbeats, message loops)
+     * and shutting down the {@link Scheduler}.
      *
-     * @param simulationId Simulation identifier.
+     * @param simulationId the simulation ID
      */
     public void stopSimulation(String simulationId) {
         if (nodeMap != null) {
@@ -125,13 +179,14 @@ public class SimulationOrchestrator {
                 vNode.stop();
             }
         }
-        // Wait briefly to ensure all heartbeat tasks have been cancelled.
+        // Give a moment for tasks to gracefully shut down.
         try {
-            Thread.sleep(1000); // wait 1 second
+            Thread.sleep(1000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        // Shut down the scheduler cleanly.
+
+        // Shut down the central scheduler.
         scheduler.shutdown();
         try {
             if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -140,6 +195,8 @@ public class SimulationOrchestrator {
         } catch (InterruptedException e) {
             scheduler.shutdownNow();
         }
+
+        // Broadcast that the simulation has stopped.
         eventLoggerService.logEvent(simulationId, "Simulation stopped.", EventType.SIMULATION_EVENT);
     }
 }
