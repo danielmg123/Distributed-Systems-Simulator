@@ -75,11 +75,11 @@ The codebase is organized into several top-level directories:
 
 - **docs/**  
   Contains detailed documentation on architecture, sequence diagrams, the simulation lifecycle, and additional design decisions:
-  - [consensus-architecture.md](docs/consensus-architecture.md)
-  - [consensus-sequence-diagrams.md](docs/consensus-sequence-diagrams.md)
-  - [high-level-architecture.md](docs/high-level-architecture.md)
-  - [simulation-lifecycle.md](docs/simulation-lifecycle.md)
-  - [simulation-node-state.md](docs/simulation-node-state.md)
+  - [consensus-architecture.md](consensus-architecture.md)
+  - [consensus-sequence-diagrams.md](consensus-sequence-diagrams.md)
+  - [high-level-architecture.md](high-level-architecture.md)
+  - [simulation-lifecycle.md](simulation-lifecycle.md)
+  - [simulation-node-state.md](simulation-node-state.md)
 
 - **frontend/**  
   (Not covered in this document)
@@ -94,8 +94,8 @@ The Distributed Systems Simulator provides a rich environment for studying how c
 ---
 
 For additional details and architectural insights, see our documentation:
-- [Consensus Architecture](docs/consensus-architecture.md)
-- [Sequence Diagrams](docs/consensus-sequence-diagrams.md)
-- [High-Level Architecture](docs/high-level-architecture.md)
-- [Simulation Lifecycle](docs/simulation-lifecycle.md)
-- [Node and Simulation State](docs/simulation-node-state.md)
+- [Consensus Architecture](consensus-architecture.md)
+- [Sequence Diagrams](consensus-sequence-diagrams.md)
+- [High-Level Architecture](high-level-architecture.md)
+- [Simulation Lifecycle](simulation-lifecycle.md)
+- [Node and Simulation State](simulation-node-state.md)
