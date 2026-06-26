@@ -169,8 +169,16 @@ public class SimulationService {
 
         // 3. Set up the shared router, consensus factory, and supporting services for the orchestrator.
         // The router shares this service's metricsCollector so dropped-message counts
-        // (e.g. messages routed to a FAILED node) show up in getSimulationMetrics().
-        MessageRouter router = new MessageRouter(metricsCollector);
+        // (e.g. messages routed to a FAILED node, or randomly lost) show up in
+        // getSimulationMetrics(). It also shares the scheduler so configured message
+        // delay can actually be simulated (see setMessageLossRate/setMaxDelayMs below).
+        MessageRouter router = new MessageRouter(metricsCollector, scheduler);
+        SimulationConfig config = simulation.getConfig();
+        if (config != null) {
+            router.setMessageLossRate(config.getMessageLossRate());
+            router.setMinDelayMs(config.getMinMessageDelayMs());
+            router.setMaxDelayMs(config.getMaxMessageDelayMs());
+        }
         ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(router, scheduler, simulationProperties);
         NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler, consensusFactory, simulationProperties);
         MetricsUpdateService metricsUpdateService = new MetricsUpdateService(metricsCollector, simulationWebSocketController, scheduler);
@@ -300,5 +308,27 @@ public class SimulationService {
             return Map.of();
         }
         return orchestrator.getTopologyMapping();
+    }
+
+    /**
+     * <p>Live-updates the simulated network conditions (random message loss and
+     * delivery delay) for a running simulation, taking effect immediately for all
+     * subsequent message sends. Intended to back UI controls (e.g. sliders) that let a
+     * user tune conditions without restarting the simulation.</p>
+     *
+     * <p>If the simulation isn't currently running (no orchestrator registered), this
+     * is a no-op -- there's no live {@link com.dss.backend.messaging.MessageRouter} to
+     * update.</p>
+     *
+     * @param simulationId    the unique ID of the simulation.
+     * @param messageLossRate probability (0.0-1.0) that a message is randomly dropped.
+     * @param minDelayMs      minimum simulated delivery delay, in milliseconds.
+     * @param maxDelayMs      maximum simulated delivery delay, in milliseconds (0 disables delay).
+     */
+    public void updateNetworkConditions(String simulationId, double messageLossRate, long minDelayMs, long maxDelayMs) {
+        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
+        if (orchestrator != null) {
+            orchestrator.setNetworkConditions(messageLossRate, minDelayMs, maxDelayMs);
+        }
     }
 }

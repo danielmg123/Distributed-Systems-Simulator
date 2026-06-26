@@ -82,7 +82,7 @@ public class MultiPaxosIntegrationTest {
     static class DummyVirtualNode extends VirtualNode {
         public DummyVirtualNode(String nodeId) {
             super(createDummyNode(nodeId), new DummyConsensusAlgorithm(), new MessageRouter(),
-                    Executors.newSingleThreadExecutor(), new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
+                    new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
             this.start();
         }
 

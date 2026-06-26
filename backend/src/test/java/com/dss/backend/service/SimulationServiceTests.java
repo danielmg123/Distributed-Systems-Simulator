@@ -199,4 +199,29 @@ public class SimulationServiceTests {
         assertNotNull(result);
         assertTrue(result.isEmpty());
     }
+
+    @Test
+    public void updateNetworkConditions_RunningSimulation_DelegatesToOrchestrator() {
+        try {
+            Field field = SimulationService.class.getDeclaredField("orchestrators");
+            field.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, SimulationOrchestrator> orchestrators = (Map<String, SimulationOrchestrator>) field.get(simulationService);
+
+            SimulationOrchestrator dummyOrch = mock(SimulationOrchestrator.class);
+            orchestrators.put("sim1", dummyOrch);
+
+            simulationService.updateNetworkConditions("sim1", 0.25, 50L, 300L);
+
+            verify(dummyOrch, times(1)).setNetworkConditions(0.25, 50L, 300L);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            fail("Reflection error: " + e.getMessage());
+        }
+    }
+
+    @Test
+    public void updateNetworkConditions_NoRunningSimulation_IsNoOp() {
+        // No orchestrator registered for "nonexistent-sim" -- must not throw.
+        assertDoesNotThrow(() -> simulationService.updateNetworkConditions("nonexistent-sim", 0.5, 10L, 100L));
+    }
 }

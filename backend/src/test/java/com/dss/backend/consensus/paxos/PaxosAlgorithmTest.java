@@ -263,13 +263,7 @@ public class PaxosAlgorithmTest {
         Node node = new Node();
         node.setId(nodeId);
         node.setStatus(NodeStatus.ACTIVE);
-        // VirtualNode.processMessages() occupies one executor thread permanently (it loops
-        // forever on inboundQueue.take()) and then re-submits each dequeued message as a
-        // *second* task onto the same executor. A single-thread executor therefore starves:
-        // the loop thread never frees up, so the resubmitted processMessage() tasks can never
-        // run and messages silently vanish. At least 2 threads are required per node.
         VirtualNode vNode = new VirtualNode(node, algorithm, router,
-                Executors.newFixedThreadPool(2),
                 new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
         vNode.start();
         router.registerNode(nodeId, vNode);

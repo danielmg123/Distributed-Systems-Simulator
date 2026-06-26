@@ -27,7 +27,7 @@ public class VirtualNodeTest {
     // A test subclass that does not automatically start processing messages.
     static class NonProcessingVirtualNode extends VirtualNode {
         public NonProcessingVirtualNode(Node node, ConsensusAlgorithm algorithm, MessageRouter router, Scheduler scheduler) {
-            super(node, algorithm, router, Executors.newSingleThreadExecutor(), scheduler);
+            super(node, algorithm, router, scheduler);
             // Override start() so we do not kick off the asynchronous loop.
         }
         // Expose the inbound queue size via reflection.
@@ -74,7 +74,7 @@ public class VirtualNodeTest {
     static class TestVirtualNodeWithPhiSpy extends VirtualNode {
         private final AppLogger testLogger;
         public TestVirtualNodeWithPhiSpy(Node node, ConsensusAlgorithm algorithm, MessageRouter router, Scheduler scheduler, AppLogger testLogger) {
-            super(node, algorithm, router, Executors.newSingleThreadExecutor(), scheduler);
+            super(node, algorithm, router, scheduler);
             this.testLogger = testLogger;
             // Do not start the automatic phi checker.
         }
@@ -174,12 +174,8 @@ public class VirtualNodeTest {
 
         // A real, fully-started VirtualNode (not the NonProcessingVirtualNode test subclass),
         // since we need its actual processing loop running so we can prove failNode()
-        // really stops it rather than just flipping a status flag. Needs at least 2
-        // threads: processMessages() occupies one thread permanently in its take()-loop
-        // and resubmits each dequeued message as a second task onto the same executor --
-        // a single-thread executor would starve and never deliver anything.
-        VirtualNode realNode = new VirtualNode(node, spyAlgorithm, router,
-                Executors.newFixedThreadPool(2), scheduler);
+        // really stops it rather than just flipping a status flag.
+        VirtualNode realNode = new VirtualNode(node, spyAlgorithm, router, scheduler);
         realNode.setHeartbeat(mockHeartbeat);
         realNode.start();
 

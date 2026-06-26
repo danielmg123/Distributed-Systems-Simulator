@@ -1,6 +1,7 @@
 package com.dss.backend.controller;
 
 import com.dss.backend.dto.EventDTO;
+import com.dss.backend.dto.NetworkConditionsDTO;
 import com.dss.backend.dto.SimulationDTO;
 import com.dss.backend.mapper.EventMapper;
 import com.dss.backend.metrics.MetricsSnapshot;
@@ -139,5 +140,19 @@ public class SimulationController {
     public ResponseEntity<Map<String, List<String>>> getSimulationTopology(@PathVariable String id) {
         Map<String, List<String>> topologyMapping = simulationService.getTopologyMapping(id);
         return ResponseEntity.ok(topologyMapping);
+    }
+
+    @Operation(
+            summary = "Update Network Conditions",
+            description = "Live-updates a running simulation's simulated message loss rate and delivery " +
+                    "delay range. Takes effect immediately for all subsequent message sends; has no effect " +
+                    "if the simulation isn't currently running. Intended to back UI controls (e.g. sliders)."
+    )
+    @PutMapping("/{id}/network-conditions")
+    public ResponseEntity<String> updateNetworkConditions(@PathVariable String id,
+                                                          @RequestBody NetworkConditionsDTO conditions) {
+        simulationService.updateNetworkConditions(
+                id, conditions.getMessageLossRate(), conditions.getMinDelayMs(), conditions.getMaxDelayMs());
+        return ResponseEntity.ok("Network conditions updated for simulation " + id);
     }
 }

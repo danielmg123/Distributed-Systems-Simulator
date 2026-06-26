@@ -26,7 +26,6 @@ import java.util.stream.Collectors;
  *       the scheduler.</li>
  *   <li>Registering every node with the {@link MessageRouter}, so that
  *       message routing can function.</li>
- *   <li>Managing a dedicated worker pool for node-level tasks.</li>
  * </ul>
  *
  * <p>This service is usually called by a higher-level coordinator, such as
@@ -40,9 +39,6 @@ public class NodeInitializationService {
     private final Scheduler scheduler;
     private final ConsensusAlgorithmFactory consensusFactory;
     private final SimulationProperties simulationProperties;
-
-    // Worker pool to handle each node's internal tasks (e.g., concurrency, message processing).
-    private final ExecutorService workerPool;
 
     /**
      * Constructs a {@link NodeInitializationService} with all the resources
@@ -61,9 +57,6 @@ public class NodeInitializationService {
         this.scheduler = scheduler;
         this.consensusFactory = consensusFactory;
         this.simulationProperties = simulationProperties;
-
-        // We create a distinct worker pool for parallel node initialization or message processing.
-        this.workerPool = Executors.newFixedThreadPool(simulationProperties.getWorkerThreadPoolSize());
     }
 
     /**
@@ -98,8 +91,8 @@ public class NodeInitializationService {
             // Create the consensus instance for this node.
             ConsensusAlgorithm consensus = consensusFactory.createAlgorithm(nodeId, allNodeIds, config);
 
-            // Wrap it in a VirtualNode that uses the shared worker pool.
-            VirtualNode vNode = new VirtualNode(node, consensus, messageRouter, workerPool, scheduler);
+            // Wrap it in a VirtualNode -- it creates its own dedicated executor internally.
+            VirtualNode vNode = new VirtualNode(node, consensus, messageRouter, scheduler);
 
             // Create and start the heartbeat mechanism (using the configured interval).
             Heartbeat heartbeat = new Heartbeat(messageRouter, nodeId, simulationProperties.getHeartbeatIntervalMillis());

@@ -1,5 +1,6 @@
 package com.dss.backend.messaging;
 
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 import com.dss.backend.metrics.DefaultMetricsCollector;
@@ -7,8 +8,10 @@ import com.dss.backend.metrics.PerformanceMetricsCollector;
 import com.dss.backend.model.NodeStatus;
 
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The <strong>MessageRouter</strong> is responsible for delivering
@@ -32,24 +35,89 @@ public class MessageRouter implements IMessageRouter {
 
     private final PerformanceMetricsCollector metricsCollector;
 
+    // Used to schedule delayed delivery when maxDelayMs > 0. May be null (e.g. for
+    // callers that only care about FAILED-node dropping and never configure a delay),
+    // in which case delayed delivery silently falls back to synchronous delivery.
+    private final Scheduler scheduler;
+
+    private final Random random = new Random();
+
+    // Chance, in [0.0, 1.0], that any given message is dropped before delivery,
+    // independent of node status. Defaults to 0 (no random loss).
+    private volatile double messageLossRate = 0.0;
+
+    // Delay range (inclusive) applied to delivery when maxDelayMs > 0. Defaults to 0,
+    // meaning messages are delivered synchronously as before this feature existed.
+    private volatile long minDelayMs = 0;
+    private volatile long maxDelayMs = 0;
+
     /**
-     * Constructs a MessageRouter with its own private, unshared metrics collector.
-     * Dropped-message counts recorded here won't be visible to anything else --
-     * prefer {@link #MessageRouter(PerformanceMetricsCollector)} when the caller
-     * already has a collector it wants to expose via a dashboard/metrics endpoint.
+     * Constructs a MessageRouter with its own private, unshared metrics collector and
+     * no scheduler (so delay simulation is unavailable -- {@link #setMaxDelayMs(long)}
+     * will be silently ignored). Dropped-message counts recorded here won't be visible
+     * to anything else -- prefer {@link #MessageRouter(PerformanceMetricsCollector, Scheduler)}
+     * when the caller already has a collector and scheduler it wants to share.
      */
     public MessageRouter() {
-        this(new DefaultMetricsCollector());
+        this(new DefaultMetricsCollector(), null);
     }
 
     /**
      * Constructs a MessageRouter that records dropped-message counts (and any other
-     * future metrics) into the given shared collector.
+     * future metrics) into the given shared collector, but with no scheduler (so delay
+     * simulation is unavailable).
      *
      * @param metricsCollector the collector to record dropped messages into
      */
     public MessageRouter(PerformanceMetricsCollector metricsCollector) {
+        this(metricsCollector, null);
+    }
+
+    /**
+     * Constructs a MessageRouter that records dropped-message counts into the given
+     * shared collector and uses the given scheduler to simulate message delay.
+     *
+     * @param metricsCollector the collector to record dropped messages into
+     * @param scheduler        used to schedule delayed delivery when a delay range is
+     *                         configured via {@link #setMinDelayMs(long)}/{@link #setMaxDelayMs(long)};
+     *                         may be null if delay simulation won't be used
+     */
+    public MessageRouter(PerformanceMetricsCollector metricsCollector, Scheduler scheduler) {
         this.metricsCollector = metricsCollector;
+        this.scheduler = scheduler;
+    }
+
+    /**
+     * Sets the probability, in [0.0, 1.0], that any given message is dropped before
+     * delivery -- independent of whether the source/target node is FAILED. Values
+     * outside [0.0, 1.0] are clamped.
+     *
+     * @param messageLossRate the new loss probability
+     */
+    public void setMessageLossRate(double messageLossRate) {
+        this.messageLossRate = Math.max(0.0, Math.min(1.0, messageLossRate));
+    }
+
+    /**
+     * Sets the minimum simulated delivery delay, in milliseconds. Has no effect unless
+     * {@link #setMaxDelayMs(long)} is also set to a positive value. Negative values are
+     * clamped to 0.
+     *
+     * @param minDelayMs the new minimum delay
+     */
+    public void setMinDelayMs(long minDelayMs) {
+        this.minDelayMs = Math.max(0, minDelayMs);
+    }
+
+    /**
+     * Sets the maximum simulated delivery delay, in milliseconds. A value of 0 (the
+     * default) disables delay simulation entirely, delivering messages synchronously.
+     * Negative values are clamped to 0.
+     *
+     * @param maxDelayMs the new maximum delay
+     */
+    public void setMaxDelayMs(long maxDelayMs) {
+        this.maxDelayMs = Math.max(0, maxDelayMs);
     }
 
     /**
@@ -79,6 +147,20 @@ public class MessageRouter implements IMessageRouter {
      * Without these checks, a "failed" node would otherwise keep fully participating
      * in the protocol from every other node's point of view, since nothing else in
      * the simulation enforces crash-stop semantics.
+     * <p>
+     * If the node-status checks pass, the message is then subject to simulated network
+     * conditions, in order:
+     * <ol>
+     *   <li>Random loss: if {@link #setMessageLossRate(double)} is non-zero, the message
+     *       may be dropped (and the dropped-message metric incremented) regardless of
+     *       node status.</li>
+     *   <li>Random delay: if {@link #setMaxDelayMs(long)} is positive and a scheduler was
+     *       provided, delivery is scheduled after a random delay in
+     *       [{@code minDelayMs}, {@code maxDelayMs}] instead of happening immediately.
+     *       Note this does not re-check node status once the delay elapses -- a node that
+     *       fails during the delay window will still receive the message.</li>
+     *   <li>Otherwise, delivery happens synchronously, as before this feature existed.</li>
+     * </ol>
      *
      * @param message the message being routed from a source node to a target node
      */
@@ -102,6 +184,22 @@ public class MessageRouter implements IMessageRouter {
             appLogger.debug("Dropping message from {} to {} (type {}): source node is FAILED",
                     message.getSourceNodeId(), message.getTargetNodeId(), message.getType());
             metricsCollector.recordDroppedMessage();
+            return;
+        }
+
+        if (messageLossRate > 0.0 && random.nextDouble() < messageLossRate) {
+            appLogger.debug("Dropping message from {} to {} (type {}): random message loss (rate={})",
+                    message.getSourceNodeId(), message.getTargetNodeId(), message.getType(), messageLossRate);
+            metricsCollector.recordDroppedMessage();
+            return;
+        }
+
+        if (maxDelayMs > 0 && scheduler != null) {
+            long effectiveMinDelay = Math.min(minDelayMs, maxDelayMs);
+            long delay = effectiveMinDelay + (long) (random.nextDouble() * (maxDelayMs - effectiveMinDelay));
+            appLogger.debug("Delaying message from {} to {} (type {}) by {} ms",
+                    message.getSourceNodeId(), message.getTargetNodeId(), message.getType(), delay);
+            scheduler.schedule(() -> targetNode.enqueueMessage(message), delay, TimeUnit.MILLISECONDS);
             return;
         }
 

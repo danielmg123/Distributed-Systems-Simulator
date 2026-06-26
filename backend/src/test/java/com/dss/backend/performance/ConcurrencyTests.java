@@ -12,8 +12,13 @@ import com.dss.backend.messaging.VirtualNode;
 import com.dss.backend.model.Node;
 import com.dss.backend.model.NodeStatus;
 import com.dss.backend.consensus.ConsensusAlgorithm;
+import com.dss.backend.consensus.raft.LogEntry;
+import com.dss.backend.consensus.raft.Raft;
+import com.dss.backend.consensus.raft.RaftPayload;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -139,6 +144,109 @@ public class ConcurrencyTests {
         scheduledExecutor.shutdown();
     }
 
+    /**
+     * Regression test for the VirtualNode concurrency bug fixed in Phase 2.4: before the
+     * fix, processMessages() took a message off the queue and resubmitted *processing*
+     * of it as a second, independent task onto a shared multi-thread executor, instead
+     * of processing it inline before looking at the next message. That let the dispatch
+     * loop dequeue and resubmit entry N+1's message before entry N's append had actually
+     * finished mutating Raft's unsynchronized {@code log} (a plain ArrayList) -- so
+     * entry N+1's {@code prevLogIndex} check could run against a log that doesn't yet
+     * contain entry N, spuriously rejecting it, or two appends could race on the same
+     * ArrayList directly. Each VirtualNode now owns a dedicated single-thread executor
+     * and processes messages inline, so message N+1 can never even begin until message
+     * N's full effect on the log is visible.
+     * <p>
+     * Five separate APPEND_ENTRIES messages (one new entry each, correctly chained via
+     * prevLogIndex/prevLogTerm) are handed off between 5 threads -- thread i sends only
+     * after thread i-1's send has returned -- so messages always *enqueue* in logical
+     * order 0..4. That isolates the bug under test to the dispatch/processing race
+     * described above rather than to enqueue ordering, while still exercising genuine
+     * thread concurrency between the senders and the follower's own processing thread.
+     * Repeated 50x because a timing-dependent bug like this can easily pass once by luck.
+     */
+    @Test
+    public void concurrentAppendEntries_ProcessedSerially_LogEndsUpExactlyCorrect() throws Exception {
+        int entryCount = 5;
+        for (int run = 0; run < 50; run++) {
+            ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
+            Scheduler scheduler = new DefaultScheduler(scheduledExecutor);
+            MessageRouter router = new MessageRouter();
+            Raft follower = new Raft("follower", java.util.Arrays.asList("leader", "follower"), router);
+            VirtualNode followerVNode = new VirtualNode(createTestNode("follower"), follower, router, scheduler);
+            router.registerNode("follower", followerVNode);
+            followerVNode.start();
+
+            ExecutorService senderPool = Executors.newFixedThreadPool(entryCount);
+            // gates[i] releases the thread sending entry i; gates[entryCount] is unused.
+            CountDownLatch[] gates = new CountDownLatch[entryCount + 1];
+            for (int i = 0; i <= entryCount; i++) {
+                gates[i] = new CountDownLatch(1);
+            }
+            CountDownLatch doneLatch = new CountDownLatch(entryCount);
+
+            try {
+                for (int i = 0; i < entryCount; i++) {
+                    final int index = i;
+                    senderPool.submit(() -> {
+                        try {
+                            gates[index].await();
+                            RaftPayload payload = new RaftPayload();
+                            payload.setType(MessageType.APPEND_ENTRIES);
+                            payload.setTerm(1);
+                            payload.setLeaderId("leader");
+                            payload.setPrevLogIndex(index - 1);
+                            payload.setPrevLogTerm(index == 0 ? -1 : 1);
+                            payload.setEntries(List.of(new LogEntry(1, "cmd" + index)));
+                            payload.setLeaderCommit(entryCount - 1);
+
+                            SimulationMessage msg = SimulationMessageFactory.createMessage(
+                                    "leader", "follower", MessageType.APPEND_ENTRIES, payload, ProtocolType.RAFT);
+                            router.messageSent(msg);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        } finally {
+                            gates[index + 1].countDown();
+                            doneLatch.countDown();
+                        }
+                    });
+                }
+                gates[0].countDown();
+                assertTrue(doneLatch.await(5, TimeUnit.SECONDS),
+                        "Senders did not finish in time on run " + run);
+
+                // Poll with a bounded timeout, since the follower's single processing
+                // thread drains the queue asynchronously.
+                List<LogEntry> finalLog = null;
+                for (int i = 0; i < 100; i++) {
+                    finalLog = getFollowerLog(follower);
+                    if (finalLog.size() >= entryCount) {
+                        break;
+                    }
+                    Thread.sleep(10);
+                }
+
+                assertNotNull(finalLog, "run " + run);
+                assertEquals(entryCount, finalLog.size(),
+                        "Log should have exactly " + entryCount + " entries, no duplicates/gaps, on run " + run);
+                for (int i = 0; i < entryCount; i++) {
+                    assertEquals("cmd" + i, finalLog.get(i).getCommand(), "Entry " + i + " mismatch on run " + run);
+                }
+            } finally {
+                senderPool.shutdown();
+                followerVNode.stop();
+                scheduler.shutdown();
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<LogEntry> getFollowerLog(Raft raft) throws Exception {
+        java.lang.reflect.Field f = Raft.class.getDeclaredField("log");
+        f.setAccessible(true);
+        return (List<LogEntry>) f.get(raft);
+    }
+
     // Helper method to create a simple Node.
     private Node createTestNode(String id) {
         Node node = new Node();
@@ -166,7 +274,7 @@ public class ConcurrencyTests {
                         public void commit(Object value) { }
                         @Override
                         public void handleMessage(SimulationMessage msg) { }
-                    }, router, Executors.newSingleThreadExecutor(),
+                    }, router,
                     new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
             // Do not start automatic processing to control it manually.
         }
@@ -230,7 +338,7 @@ public class ConcurrencyTests {
     private static class TestVirtualNodeWithPhiSpy extends VirtualNode {
         private final AppLogger testLogger;
         public TestVirtualNodeWithPhiSpy(Node node, ConsensusAlgorithm algorithm, MessageRouter router, Scheduler scheduler, AppLogger testLogger) {
-            super(node, algorithm, router, Executors.newSingleThreadExecutor(), scheduler);
+            super(node, algorithm, router, scheduler);
             this.testLogger = testLogger;
             // Do not start the automatic phi checker.
         }

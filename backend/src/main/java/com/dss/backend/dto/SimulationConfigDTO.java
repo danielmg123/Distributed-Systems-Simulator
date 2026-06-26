@@ -27,4 +27,16 @@ public class SimulationConfigDTO {
 
     @Schema(description = "Indicates if TLS/SSL is enabled", example = "false")
     private boolean tlsEnabled;
+
+    @Schema(description = "Probability (0.0-1.0) that any given message is randomly dropped in transit, " +
+            "independent of node failures. 0 (default) disables random loss.", example = "0.0")
+    private double messageLossRate;
+
+    @Schema(description = "Minimum simulated message delivery delay, in milliseconds. Has no effect unless " +
+            "maxMessageDelayMs is also set to a positive value.", example = "0")
+    private long minMessageDelayMs;
+
+    @Schema(description = "Maximum simulated message delivery delay, in milliseconds. 0 (default) disables " +
+            "delay simulation entirely, delivering messages synchronously.", example = "0")
+    private long maxMessageDelayMs;
 }

@@ -119,4 +119,23 @@ public class SimulationControllerTest {
                 .andExpect(jsonPath("$.node1[0]", is("node2")))
                 .andExpect(jsonPath("$.node1[1]", is("node3")));
     }
+
+    @Test
+    @WithMockUser(username = "user", roles = {"USER"})
+    public void updateNetworkConditions_ValidRequest_DelegatesToService() throws Exception {
+        com.dss.backend.dto.NetworkConditionsDTO conditions = new com.dss.backend.dto.NetworkConditionsDTO();
+        conditions.setMessageLossRate(0.2);
+        conditions.setMinDelayMs(50);
+        conditions.setMaxDelayMs(250);
+
+        Mockito.doNothing().when(simulationService).updateNetworkConditions("sim1", 0.2, 50L, 250L);
+
+        mockMvc.perform(put("/api/simulations/sim1/network-conditions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(conditions)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Network conditions updated for simulation sim1")));
+
+        Mockito.verify(simulationService).updateNetworkConditions("sim1", 0.2, 50L, 250L);
+    }
 }

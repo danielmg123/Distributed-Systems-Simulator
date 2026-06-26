@@ -19,7 +19,6 @@ class DummyVirtualNode extends VirtualNode {
                 // Use a no‑op consensus algorithm.
                 new DummyConsensusAlgorithm(),
                 new MessageRouter(), // not used in this dummy
-                java.util.concurrent.Executors.newSingleThreadExecutor(),
                 new com.dss.backend.engine.DefaultScheduler(java.util.concurrent.Executors.newSingleThreadScheduledExecutor()));
         // For our tests, start the processing loop.
         this.start();
@@ -131,5 +130,56 @@ public class MessageRouterTest {
 
         verify(activeNode, times(1)).enqueueMessage(message);
         verify(metricsCollector, never()).recordDroppedMessage();
+    }
+
+    @Test
+    public void messageSent_FullLossRate_NeverDelivers() {
+        PerformanceMetricsCollector metricsCollector = mock(PerformanceMetricsCollector.class);
+        MessageRouter lossyRouter = new MessageRouter(metricsCollector);
+        lossyRouter.setMessageLossRate(1.0);
+
+        DummyVirtualNode targetNode = spy(new DummyVirtualNode("lossyTarget"));
+        lossyRouter.registerNode("lossyTarget", targetNode);
+
+        int sendCount = 20;
+        for (int i = 0; i < sendCount; i++) {
+            SimulationMessage message = new SimulationMessage(
+                    "sender", "lossyTarget", MessageType.HEARTBEAT, System.currentTimeMillis(), ProtocolType.UNIVERSAL);
+            lossyRouter.messageSent(message);
+        }
+
+        verify(targetNode, never()).enqueueMessage(any());
+        verify(metricsCollector, times(sendCount)).recordDroppedMessage();
+    }
+
+    @Test
+    public void messageSent_WithFixedDelay_DeliversOnlyAfterApproximatelyConfiguredDelay() {
+        com.dss.backend.engine.Scheduler realScheduler = new com.dss.backend.engine.DefaultScheduler(
+                java.util.concurrent.Executors.newSingleThreadScheduledExecutor());
+        PerformanceMetricsCollector metricsCollector = mock(PerformanceMetricsCollector.class);
+        // minDelayMs == maxDelayMs makes the delay deterministic (no randomness) for a
+        // tight, non-flaky timestamp assertion.
+        MessageRouter delayedRouter = new MessageRouter(metricsCollector, realScheduler);
+        delayedRouter.setMinDelayMs(200);
+        delayedRouter.setMaxDelayMs(200);
+
+        DummyVirtualNode targetNode = spy(new DummyVirtualNode("delayedTarget"));
+        delayedRouter.registerNode("delayedTarget", targetNode);
+
+        SimulationMessage message = new SimulationMessage(
+                "sender", "delayedTarget", MessageType.HEARTBEAT, System.currentTimeMillis(), ProtocolType.UNIVERSAL);
+
+        long sentAt = System.currentTimeMillis();
+        delayedRouter.messageSent(message);
+
+        // messageSent() only schedules delivery -- it must not deliver synchronously.
+        verify(targetNode, never()).enqueueMessage(message);
+
+        // Delivery should happen once the delay elapses, within a generous timeout.
+        verify(targetNode, timeout(2000)).enqueueMessage(message);
+        long observedDelay = System.currentTimeMillis() - sentAt;
+
+        assertTrue(observedDelay >= 150,
+                "Delivery should not happen meaningfully before the configured 200ms delay, took " + observedDelay + "ms");
     }
 }

@@ -119,6 +119,22 @@ public class SimulationOrchestrator {
     }
 
     /**
+     * Live-updates the simulated network conditions (random message loss and delivery
+     * delay) for this simulation's {@link MessageRouter}, taking effect immediately for
+     * all subsequent message sends. Intended to back UI controls (e.g. sliders) that
+     * let a user tune conditions while a simulation is already running.
+     *
+     * @param messageLossRate probability (0.0-1.0) that a message is randomly dropped
+     * @param minDelayMs      minimum simulated delivery delay, in milliseconds
+     * @param maxDelayMs      maximum simulated delivery delay, in milliseconds (0 disables delay)
+     */
+    public void setNetworkConditions(double messageLossRate, long minDelayMs, long maxDelayMs) {
+        messageRouter.setMessageLossRate(messageLossRate);
+        messageRouter.setMinDelayMs(minDelayMs);
+        messageRouter.setMaxDelayMs(maxDelayMs);
+    }
+
+    /**
      * Starts the simulation by initiating periodic metrics updates and
      * logging an event that the simulation has started.
      *

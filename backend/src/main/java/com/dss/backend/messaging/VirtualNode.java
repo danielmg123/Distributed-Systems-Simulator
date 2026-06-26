@@ -28,9 +28,14 @@ public class VirtualNode {
     // Each neighbor has its own phi detector.
     private final Map<String, PhiAccrual> phiDetectors = new ConcurrentHashMap<>();
 
-    // Dependencies are injected rather than created internally.
-    private final ExecutorService messageProcessingExecutor;
     private final Scheduler scheduler;
+
+    // Dedicated single-thread executor for this node's message processing loop, created
+    // in start() and shut down in stop(). One executor per node (rather than a shared
+    // pool sized smaller than the node count) guarantees every node's messages are
+    // processed strictly sequentially against its own mutable state -- see
+    // processMessages() below -- and ties the executor's lifecycle to the node's.
+    private ExecutorService messageProcessingExecutor;
 
     // Handle to the scheduled phi-checker task.
     private ScheduledFuture<?> phiCheckerFuture;
@@ -42,21 +47,14 @@ public class VirtualNode {
     // Lifecycle flag.
     private volatile boolean running = false;
 
-    // Handle to the running processMessages() loop, so stop()/failNode() can interrupt
-    // a blocked inboundQueue.take() immediately instead of waiting for the next message
-    // to arrive before the loop notices `running` flipped to false.
-    private volatile Future<?> processingLoopFuture;
-
     // All dependencies are provided via the constructor.
     public VirtualNode(Node node,
                        ConsensusAlgorithm algorithm,
                        MessageRouter router,
-                       ExecutorService messageProcessingExecutor,
                        Scheduler scheduler) {
         this.node = node;
         this.algorithm = algorithm;
         this.router = router;
-        this.messageProcessingExecutor = messageProcessingExecutor;
         this.scheduler = scheduler;
     }
 
@@ -70,10 +68,8 @@ public class VirtualNode {
             return;
         }
         running = true;
-        // Submit the main message processing loop to the provided executor, keeping a
-        // handle to it so stop() can interrupt it immediately rather than waiting for
-        // the next message.
-        processingLoopFuture = messageProcessingExecutor.submit(this::processMessages);
+        messageProcessingExecutor = Executors.newSingleThreadExecutor();
+        messageProcessingExecutor.submit(this::processMessages);
         // Start the phi-checking task on the injected scheduler.
         startPhiChecker();
     }
@@ -82,18 +78,17 @@ public class VirtualNode {
      * Stops the virtual node: halts message processing, the phi-checker, and the
      * heartbeat. Idempotent -- calling this on an already-stopped node is a no-op.
      * <p>
-     * Cancelling {@link #processingLoopFuture} with {@code mayInterruptIfRunning=true}
-     * interrupts a blocked {@code inboundQueue.take()} immediately; without this, the
-     * processing loop would only notice {@code running} flipped to false after its next
-     * message arrives, which could be never.
+     * {@code shutdownNow()} interrupts a blocked {@code inboundQueue.take()} immediately;
+     * without this, the processing loop would only notice {@code running} flipped to
+     * false after its next message arrives, which could be never.
      */
     public void stop() {
         if (!running) {
             return;
         }
         running = false;
-        if (processingLoopFuture != null) {
-            processingLoopFuture.cancel(true);
+        if (messageProcessingExecutor != null) {
+            messageProcessingExecutor.shutdownNow();
         }
         stopPhiChecker();
         if (heartbeat != null) {
@@ -102,14 +97,17 @@ public class VirtualNode {
     }
 
     /**
-     * Continuously takes messages from the inbound queue and dispatches them.
+     * Continuously takes messages from the inbound queue and processes them inline, one
+     * at a time. Processing must stay on this single thread (and never be resubmitted
+     * as a separate task) so that a node's messages are always handled strictly
+     * sequentially -- otherwise concurrent calls could race against the node's own
+     * mutable consensus state (e.g. Raft's log, currentTerm).
      */
     private void processMessages() {
         while (running) {
             try {
                 SimulationMessage msg = inboundQueue.take();
-                // Delegate processing to the executor.
-                messageProcessingExecutor.submit(() -> processMessage(msg));
+                processMessage(msg);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -177,13 +175,6 @@ public class VirtualNode {
      * processing (so it neither reacts to nor learns about further protocol traffic),
      * the phi-checker, and the heartbeat. Idempotent -- calling this on an
      * already-failed node is a no-op.
-     * <p>
-     * Note this only stops the node's own ability to send/process messages. As of this
-     * change, {@link MessageRouter#messageSent(SimulationMessage)} still attempts
-     * delivery to FAILED nodes the same as any other node -- those messages will now
-     * simply sit in this node's inbound queue forever rather than being processed
-     * (since the processing loop is stopped). Making the router itself drop messages
-     * to/from FAILED nodes is a separate, still-open piece of work.
      */
     public void failNode() {
         if (node.getStatus() == NodeStatus.FAILED) {
