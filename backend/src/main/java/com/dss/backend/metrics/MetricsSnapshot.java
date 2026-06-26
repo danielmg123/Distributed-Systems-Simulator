@@ -12,13 +12,16 @@ public class MetricsSnapshot {
     private final long totalProposals;
     private final long totalCommits;
     private final long totalFailureRecoveryMillis;
+    private final long totalDroppedMessages;
 
-    public MetricsSnapshot(long totalMessages, long totalLatencyMillis, long totalProposals, long totalCommits, long totalFailureRecoveryMillis) {
+    public MetricsSnapshot(long totalMessages, long totalLatencyMillis, long totalProposals, long totalCommits,
+                            long totalFailureRecoveryMillis, long totalDroppedMessages) {
         this.totalMessages = totalMessages;
         this.totalLatencyMillis = totalLatencyMillis;
         this.totalProposals = totalProposals;
         this.totalCommits = totalCommits;
         this.totalFailureRecoveryMillis = totalFailureRecoveryMillis;
+        this.totalDroppedMessages = totalDroppedMessages;
     }
 
     @Override
@@ -29,6 +32,7 @@ public class MetricsSnapshot {
                 ", totalProposals=" + totalProposals +
                 ", totalCommits=" + totalCommits +
                 ", totalFailureRecoveryMillis=" + totalFailureRecoveryMillis +
+                ", totalDroppedMessages=" + totalDroppedMessages +
                 '}';
     }
 }

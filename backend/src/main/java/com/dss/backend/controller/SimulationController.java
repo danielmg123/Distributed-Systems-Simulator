@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -124,5 +125,19 @@ public class SimulationController {
                 .map(eventMapper::eventToEventDTO)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(eventDTOs);
+    }
+
+    @Operation(
+            summary = "Get Simulation Topology",
+            description = "Retrieves the neighbor-adjacency map computed for this simulation's topology " +
+                    "(RING/STAR/TREE/MESH), for a dashboard to render. This is visualization metadata only -- " +
+                    "it does not constrain how messages are actually routed between nodes; every consensus " +
+                    "algorithm's broadcast logic always reaches every node regardless of topology, since " +
+                    "quorum-based protocols need full connectivity to function."
+    )
+    @GetMapping("/{id}/topology")
+    public ResponseEntity<Map<String, List<String>>> getSimulationTopology(@PathVariable String id) {
+        Map<String, List<String>> topologyMapping = simulationService.getTopologyMapping(id);
+        return ResponseEntity.ok(topologyMapping);
     }
 }

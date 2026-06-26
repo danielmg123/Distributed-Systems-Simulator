@@ -107,4 +107,16 @@ public class SimulationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Node node1 failed in simulation sim1")));
     }
+
+    @Test
+    @WithMockUser(username = "user", roles = {"USER"})
+    public void getSimulationTopology_ValidId_ReturnsNeighborMapping() throws Exception {
+        Mockito.when(simulationService.getTopologyMapping("sim1"))
+                .thenReturn(java.util.Map.of("node1", java.util.List.of("node2", "node3")));
+
+        mockMvc.perform(get("/api/simulations/sim1/topology"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.node1[0]", is("node2")))
+                .andExpect(jsonPath("$.node1[1]", is("node3")));
+    }
 }

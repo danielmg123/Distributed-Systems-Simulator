@@ -81,6 +81,16 @@ Below is the diagram representing the high-level architecture of DSS:
 - **Metrics & Logging**: Real-time metric snapshots are broadcast to the front-end, and each node logs events (commits, proposals, failures).  
 - **Scalability**: Docker and Kubernetes support allow easy scaling of the simulator or integration into CI/CD pipelines.
 
+> **Current limitation (as of this writing):** the network-partition/topology-aware
+> delivery implied above is not yet built. `MessageRouter` always delivers directly
+> from source to target node, and the RING/STAR/TREE/MESH topology selection (via
+> `TopologyPlacer`) only produces a neighbor map for visualization/metadata purposes —
+> it does not constrain actual message routing. The simulation's `GET
+> /api/simulations/{id}/topology` endpoint exposes this neighbor map for a dashboard to
+> draw, but every consensus algorithm's broadcast still reaches every registered node
+> regardless of topology, since the quorum-based protocols implemented here require
+> full connectivity to function.
+
 ---
 
 ### 5. Codebase Structure

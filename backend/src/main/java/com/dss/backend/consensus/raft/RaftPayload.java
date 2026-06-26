@@ -34,6 +34,20 @@ public class RaftPayload {
     private String candidateId;
 
     /**
+     * Used in REQUEST_VOTE messages so the voter can apply Raft's election
+     * restriction: a candidate may only receive a vote if its log is at least
+     * as up to date as the voter's own log. This is the index of the
+     * candidate's last log entry (-1 if its log is empty).
+     */
+    private int lastLogIndex;
+
+    /**
+     * Used alongside {@link #lastLogIndex} in REQUEST_VOTE messages: the term
+     * of the candidate's last log entry (-1 if its log is empty).
+     */
+    private int lastLogTerm;
+
+    /**
      * Used in APPEND_ENTRIES messages to indicate the current leader’s ID.
      */
     private String leaderId;

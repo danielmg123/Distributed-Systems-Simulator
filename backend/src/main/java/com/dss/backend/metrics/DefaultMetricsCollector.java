@@ -11,6 +11,7 @@ public class DefaultMetricsCollector implements PerformanceMetricsCollector {
     private final LongAdder proposalCount = new LongAdder();
     private final LongAdder commitCount = new LongAdder();
     private final LongAdder failureRecoveryTime = new LongAdder();
+    private final LongAdder droppedMessageCount = new LongAdder();
 
     @Override
     public void recordMessageLatency(long latencyMillis) {
@@ -34,13 +35,19 @@ public class DefaultMetricsCollector implements PerformanceMetricsCollector {
     }
 
     @Override
+    public void recordDroppedMessage() {
+        droppedMessageCount.increment();
+    }
+
+    @Override
     public MetricsSnapshot getSnapshot() {
         return new MetricsSnapshot(
                 messageCount.sum(),
                 totalLatency.sum(),
                 proposalCount.sum(),
                 commitCount.sum(),
-                failureRecoveryTime.sum()
+                failureRecoveryTime.sum(),
+                droppedMessageCount.sum()
         );
     }
 }

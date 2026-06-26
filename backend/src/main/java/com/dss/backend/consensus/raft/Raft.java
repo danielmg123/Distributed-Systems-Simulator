@@ -229,18 +229,40 @@ public class Raft extends AbstractConsensusAlgorithm {
         voteRequest.setType(MessageType.REQUEST_VOTE);
         voteRequest.setTerm(currentTerm);
         voteRequest.setCandidateId(myNodeId);
+        voteRequest.setLastLogIndex(getLastLogIndex());
+        voteRequest.setLastLogTerm(getLastLogTerm());
 
         broadcaster.broadcast(MessageType.REQUEST_VOTE, voteRequest, ProtocolType.RAFT);
     }
 
     /**
+     * @return the index of this node's last log entry, or -1 if the log is empty.
+     */
+    private int getLastLogIndex() {
+        return log.size() - 1;
+    }
+
+    /**
+     * @return the term of this node's last log entry, or -1 if the log is empty.
+     */
+    private int getLastLogTerm() {
+        int lastLogIndex = getLastLogIndex();
+        return lastLogIndex >= 0 ? log.get(lastLogIndex).getTerm() : -1;
+    }
+
+    /**
      * Handles an incoming <code>REQUEST_VOTE</code> message.
      * <p>
-     * If the candidate’s term is higher, become follower. If the term matches this node’s
-     * and we have not yet voted or have previously voted for this candidate, grant the vote.
+     * If the candidate’s term is higher, become follower. We grant the vote only if
+     * all of the following hold: we are in the same term as the candidate, we haven’t
+     * voted for someone else this term, and the candidate's log is at least as up to
+     * date as our own (Raft's election restriction, §5.4.1). Without this last check, a
+     * candidate with a stale/shorter log could win an election and overwrite entries
+     * that are already committed on other nodes.
      *
      * @param sourceNode the candidate requesting the vote
-     * @param rp         the RaftPayload containing term and candidate ID
+     * @param rp         the RaftPayload containing term, candidate ID, and the candidate's
+     *                   last log index/term
      */
     private void handleRequestVote(String sourceNode, RaftPayload rp) {
         int term = rp.getTerm();
@@ -253,8 +275,18 @@ public class Raft extends AbstractConsensusAlgorithm {
         boolean grantVote = false;
         // If we are in the same term and haven’t voted or have voted for this candidate
         if (term == currentTerm && (votedFor == null || votedFor.equals(candidateId))) {
-            grantVote = true;
-            votedFor = candidateId;
+            int candidateLastLogIndex = rp.getLastLogIndex();
+            int candidateLastLogTerm = rp.getLastLogTerm();
+            int myLastLogIndex = getLastLogIndex();
+            int myLastLogTerm = getLastLogTerm();
+
+            boolean candidateLogIsUpToDate = candidateLastLogTerm > myLastLogTerm
+                    || (candidateLastLogTerm == myLastLogTerm && candidateLastLogIndex >= myLastLogIndex);
+
+            if (candidateLogIsUpToDate) {
+                grantVote = true;
+                votedFor = candidateId;
+            }
         }
 
         // Send REQUEST_VOTE_RESPONSE

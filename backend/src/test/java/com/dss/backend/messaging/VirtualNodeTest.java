@@ -8,6 +8,7 @@ import static org.mockito.Mockito.*;
 import com.dss.backend.consensus.ConsensusAlgorithm;
 import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.engine.Scheduler;
+import com.dss.backend.failure.Heartbeat;
 import com.dss.backend.failure.PhiAccrual;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
@@ -160,5 +161,70 @@ public class VirtualNodeTest {
         nodeWithPhiSpy.runPhiCheckNow();
         // Verify that our spy logger logged an info message containing "suspects neighbor".
         verify(spyLogger, atLeastOnce()).info(contains("suspects neighbor"), any(), any(), any());
+    }
+
+    @Test
+    public void failNode_StopsMessageProcessingAndHeartbeat_RecoverNode_ResumesBoth() throws Exception {
+        Node node = new Node();
+        node.setId("vn-fail-test");
+        node.setStatus(NodeStatus.ACTIVE);
+
+        ConsensusAlgorithm spyAlgorithm = spy(new DummyConsensusAlgorithmSpy());
+        Heartbeat mockHeartbeat = mock(Heartbeat.class);
+
+        // A real, fully-started VirtualNode (not the NonProcessingVirtualNode test subclass),
+        // since we need its actual processing loop running so we can prove failNode()
+        // really stops it rather than just flipping a status flag. Needs at least 2
+        // threads: processMessages() occupies one thread permanently in its take()-loop
+        // and resubmits each dequeued message as a second task onto the same executor --
+        // a single-thread executor would starve and never deliver anything.
+        VirtualNode realNode = new VirtualNode(node, spyAlgorithm, router,
+                Executors.newFixedThreadPool(2), scheduler);
+        realNode.setHeartbeat(mockHeartbeat);
+        realNode.start();
+
+        try {
+            // Sanity check: the node actually processes messages while ACTIVE.
+            SimulationMessage beforeFail = new SimulationMessage(
+                    "sender", "vn-fail-test", MessageType.PROPOSAL, "beforeFail", ProtocolType.UNIVERSAL);
+            realNode.enqueueMessage(beforeFail);
+            verify(spyAlgorithm, timeout(2000)).handleMessage(beforeFail);
+
+            realNode.failNode();
+
+            assertEquals(NodeStatus.FAILED, realNode.getNodeStatus(),
+                    "failNode() should mark the node FAILED");
+            verify(mockHeartbeat, times(1)).stop();
+
+            // A message enqueued after failure must never be processed -- the loop is
+            // actually stopped, not just the status flag.
+            SimulationMessage afterFail = new SimulationMessage(
+                    "sender", "vn-fail-test", MessageType.PROPOSAL, "afterFail", ProtocolType.UNIVERSAL);
+            realNode.enqueueMessage(afterFail);
+            Thread.sleep(300);
+            verify(spyAlgorithm, never()).handleMessage(afterFail);
+
+            // Calling failNode() again on an already-failed node must be a no-op.
+            realNode.failNode();
+            verify(mockHeartbeat, times(1)).stop();
+
+            realNode.recoverNode();
+
+            assertEquals(NodeStatus.ACTIVE, realNode.getNodeStatus(),
+                    "recoverNode() should mark the node ACTIVE again");
+            verify(mockHeartbeat, times(1)).start(scheduler);
+
+            // Processing must actually resume after recovery.
+            SimulationMessage afterRecover = new SimulationMessage(
+                    "sender", "vn-fail-test", MessageType.PROPOSAL, "afterRecover", ProtocolType.UNIVERSAL);
+            realNode.enqueueMessage(afterRecover);
+            verify(spyAlgorithm, timeout(2000)).handleMessage(afterRecover);
+
+            // Calling recoverNode() again on an already-active node must be a no-op.
+            realNode.recoverNode();
+            verify(mockHeartbeat, times(1)).start(scheduler);
+        } finally {
+            realNode.stop();
+        }
     }
 }

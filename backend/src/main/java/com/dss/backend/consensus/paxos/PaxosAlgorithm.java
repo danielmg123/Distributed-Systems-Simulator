@@ -101,6 +101,13 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
     private final ConcurrentHashMap<Integer, Integer> acceptCountMap = new ConcurrentHashMap<>();
 
     /**
+     * This node's position within {@link #allNodeIds}. Salted into every proposal
+     * number so that concurrently proposing nodes can never generate colliding
+     * proposal numbers (see {@link #generateNextProposalNumber()}).
+     */
+    private final int nodeIndex;
+
+    /**
      * Constructs a PaxosAlgorithm for this node.
      *
      * @param myNodeId   the local node ID
@@ -115,6 +122,7 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
         this.broadcaster = new ConsensusBroadcaster(router, myNodeId);
         // For N nodes, the majority threshold is (N/2 + 1).
         this.majority = (allNodeIds.size() / 2) + 1;
+        this.nodeIndex = allNodeIds.indexOf(myNodeId);
     }
 
     /**
@@ -191,6 +199,9 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
                 break;
             case ACCEPTED:
                 onAccepted(msg.getSourceNodeId(), payload);
+                break;
+            case COMMIT:
+                onCommit(msg.getSourceNodeId(), payload);
                 break;
             default:
                 // For Paxos, we ignore any other message types (heartbeat, etc.).
@@ -395,21 +406,44 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
         if (newCount >= majority) {
             commit(payload.getProposedValue());
 
+            // Without this, only the proposer ever learns the chosen value -- the
+            // acceptors that voted ACCEPTED never find out their proposal was chosen.
+            // Broadcasting COMMIT here is the Learner phase: it disseminates the
+            // chosen value to every node, not just the proposer.
+            PaxosMessagingUtil.broadcastCommit(broadcaster, proposalNumber, payload.getProposedValue());
+
             // Optionally, we could remove references to that proposal from
             // proposalStateMap and acceptCountMap for cleanup.
         }
     }
 
+    /**
+     * Handles an incoming COMMIT message (the Learner phase). Any node -- proposer
+     * or acceptor -- that receives this learns the value chosen by the cluster and
+     * applies it locally via {@link #commit(Object)}.
+     *
+     * @param sourceNode the node that sent the COMMIT (the original proposer)
+     * @param payload    includes the proposalNumber and the chosen value
+     */
+    private void onCommit(String sourceNode, PaxosPayload payload) {
+        commit(payload.getProposedValue());
+    }
+
     // ---------- Helper: Generate Unique Proposal IDs ----------
 
     /**
-     * Generates a unique proposal number by incrementing a local counter.
-     * This ensures that each new proposal from this node is strictly greater
-     * than any prior proposals from the same node.
+     * Generates a globally unique proposal number by combining a local,
+     * strictly-increasing round counter with this node's index in
+     * {@link #allNodeIds}. Plain per-node counters (e.g. 1, 2, 3, ...) would let
+     * two different nodes generate the same proposal number concurrently, which
+     * breaks Paxos's safety guarantees since acceptors compare proposal numbers
+     * as plain integers across all proposers. Salting by node index guarantees
+     * every node produces a disjoint sequence of numbers.
      *
-     * @return the next unique proposal number
+     * @return the next globally unique proposal number
      */
     private int generateNextProposalNumber() {
-        return proposalCounter.incrementAndGet();
+        int round = proposalCounter.incrementAndGet();
+        return round * allNodeIds.size() + nodeIndex;
     }
 }

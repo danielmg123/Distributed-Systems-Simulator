@@ -12,6 +12,7 @@ import com.dss.backend.model.Node;
 import com.dss.backend.model.SimulationConfig;
 import com.dss.backend.model.TopologyType;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -43,7 +44,10 @@ public class SimulationOrchestrator {
     // A map from node ID -> the in-memory VirtualNode instance
     private Map<String, VirtualNode> nodeMap;
 
-    // Optionally used to store adjacency relationships or neighbor lists if the topology is not fully mesh.
+    // Neighbor-adjacency map computed from the simulation's chosen TopologyType.
+    // NOTE: this is metadata for visualization only (see getTopologyMapping()) -- it is
+    // not consulted by MessageRouter or by any consensus algorithm's broadcast logic,
+    // which always reach every node regardless of topology.
     private Map<String, List<String>> topologyMapping;
 
     /**
@@ -70,7 +74,10 @@ public class SimulationOrchestrator {
 
     /**
      * Creates and starts virtual nodes for each domain {@link Node} provided.
-     * If a topology is specified, it also computes neighbor relationships.
+     * If a topology is specified, it also computes neighbor relationships for
+     * {@link #getTopologyMapping()} -- note that this mapping is metadata for
+     * visualization only and does not affect how messages are actually routed
+     * between nodes (see {@link TopologyPlacer} for details on why).
      *
      * @param nodes        the list of node definitions
      * @param config       simulation config (consensus algorithm, etc.)
@@ -95,6 +102,20 @@ public class SimulationOrchestrator {
      */
     public Map<String, List<String>> computeTopologyMapping(List<Node> nodes, TopologyType topologyType) {
         return TopologyPlacer.assignNeighbors(topologyType, nodes);
+    }
+
+    /**
+     * Returns the neighbor-adjacency map computed for this simulation's topology, for
+     * a dashboard to render. This is visualization metadata only -- it is not consulted
+     * by {@link MessageRouter} or by any consensus algorithm's broadcast logic, which
+     * always reach every registered node regardless of topology (quorum-based protocols
+     * need full connectivity to function at all).
+     *
+     * @return a map of node ID -> list of neighbor node IDs, or an empty map if no
+     *         topology was configured for this simulation
+     */
+    public Map<String, List<String>> getTopologyMapping() {
+        return topologyMapping != null ? topologyMapping : Collections.emptyMap();
     }
 
     /**

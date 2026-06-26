@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import java.util.Set;
 
+import com.dss.backend.metrics.PerformanceMetricsCollector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -75,5 +76,60 @@ public class MessageRouterTest {
         router.messageSent(message);
         // We simply verify that "nonExistent" is not in the registered nodes.
         assertFalse(router.getRegisteredNodeIds().contains("nonExistent"), "Non-existent node should not be registered");
+    }
+
+    @Test
+    public void messageSent_TargetNodeFailed_DropsMessageAndRecordsMetric() {
+        PerformanceMetricsCollector metricsCollector = mock(PerformanceMetricsCollector.class);
+        MessageRouter routerWithMetrics = new MessageRouter(metricsCollector);
+
+        DummyVirtualNode failedNode = spy(new DummyVirtualNode("failedNode"));
+        failedNode.failNode();
+        routerWithMetrics.registerNode("failedNode", failedNode);
+
+        SimulationMessage message = new SimulationMessage(
+                "sender", "failedNode", MessageType.HEARTBEAT, System.currentTimeMillis(), ProtocolType.UNIVERSAL);
+        routerWithMetrics.messageSent(message);
+
+        verify(failedNode, never()).enqueueMessage(message);
+        verify(metricsCollector, times(1)).recordDroppedMessage();
+    }
+
+    @Test
+    public void messageSent_SourceNodeFailed_DropsMessageAndRecordsMetric() {
+        PerformanceMetricsCollector metricsCollector = mock(PerformanceMetricsCollector.class);
+        MessageRouter routerWithMetrics = new MessageRouter(metricsCollector);
+
+        // Source node has already failed (e.g. it queued this send right before failing),
+        // but the target node is perfectly healthy.
+        DummyVirtualNode sourceFailedNode = spy(new DummyVirtualNode("sourceFailed"));
+        sourceFailedNode.failNode();
+        DummyVirtualNode targetActiveNode = spy(new DummyVirtualNode("targetActive"));
+
+        routerWithMetrics.registerNode("sourceFailed", sourceFailedNode);
+        routerWithMetrics.registerNode("targetActive", targetActiveNode);
+
+        SimulationMessage message = new SimulationMessage(
+                "sourceFailed", "targetActive", MessageType.HEARTBEAT, System.currentTimeMillis(), ProtocolType.UNIVERSAL);
+        routerWithMetrics.messageSent(message);
+
+        verify(targetActiveNode, never()).enqueueMessage(message);
+        verify(metricsCollector, times(1)).recordDroppedMessage();
+    }
+
+    @Test
+    public void messageSent_BothNodesActive_DoesNotRecordDroppedMetric() {
+        PerformanceMetricsCollector metricsCollector = mock(PerformanceMetricsCollector.class);
+        MessageRouter routerWithMetrics = new MessageRouter(metricsCollector);
+
+        DummyVirtualNode activeNode = spy(new DummyVirtualNode("activeNode"));
+        routerWithMetrics.registerNode("activeNode", activeNode);
+
+        SimulationMessage message = new SimulationMessage(
+                "sender", "activeNode", MessageType.HEARTBEAT, System.currentTimeMillis(), ProtocolType.UNIVERSAL);
+        routerWithMetrics.messageSent(message);
+
+        verify(activeNode, times(1)).enqueueMessage(message);
+        verify(metricsCollector, never()).recordDroppedMessage();
     }
 }

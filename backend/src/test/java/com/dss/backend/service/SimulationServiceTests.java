@@ -170,4 +170,33 @@ public class SimulationServiceTests {
             fail("Reflection error: " + e.getMessage());
         }
     }
+
+    @Test
+    public void getTopologyMapping_RunningSimulation_ReturnsOrchestratorsMapping() {
+        try {
+            Field field = SimulationService.class.getDeclaredField("orchestrators");
+            field.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, SimulationOrchestrator> orchestrators = (Map<String, SimulationOrchestrator>) field.get(simulationService);
+
+            SimulationOrchestrator dummyOrch = mock(SimulationOrchestrator.class);
+            Map<String, List<String>> expectedMapping = Map.of("node1", Arrays.asList("node2", "node3"));
+            when(dummyOrch.getTopologyMapping()).thenReturn(expectedMapping);
+            orchestrators.put("sim1", dummyOrch);
+
+            Map<String, List<String>> result = simulationService.getTopologyMapping("sim1");
+
+            assertEquals(expectedMapping, result);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            fail("Reflection error: " + e.getMessage());
+        }
+    }
+
+    @Test
+    public void getTopologyMapping_NoRunningSimulation_ReturnsEmptyMap() {
+        Map<String, List<String>> result = simulationService.getTopologyMapping("nonexistent-sim");
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
 }

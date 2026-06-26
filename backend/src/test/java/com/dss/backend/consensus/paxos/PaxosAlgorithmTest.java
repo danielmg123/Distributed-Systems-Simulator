@@ -1,16 +1,24 @@
 package com.dss.backend.consensus.paxos;
 
+import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.messaging.MessageRouter;
 import com.dss.backend.messaging.MessageType;
 import com.dss.backend.messaging.ProtocolType;
 import com.dss.backend.messaging.SimulationMessage;
 import com.dss.backend.messaging.SimulationMessageFactory;
+import com.dss.backend.messaging.VirtualNode;
+import com.dss.backend.model.Node;
+import com.dss.backend.model.NodeStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -42,10 +50,14 @@ public class PaxosAlgorithmTest {
                 .anyMatch(msg -> msg.getType() == MessageType.PREPARE_REQUEST);
         assertTrue(prepareRequestFound, "A PREPARE_REQUEST message should be broadcast");
 
-        // Verify that the payload contains a proposal number (should be 1 for the first proposal)
+        // Verify that the payload contains a proposal number. node1 is index 0 of 3 nodes,
+        // and proposal numbers are now salted as (round * clusterSize + nodeIndex), so the
+        // first proposal from node1 is (1 * 3 + 0) = 3, not a plain "1". See
+        // PaxosAlgorithm.generateNextProposalNumber() for why: a plain per-node counter would
+        // let two different nodes generate colliding proposal numbers.
         SimulationMessage sentMsg = captor.getAllValues().get(0);
         PaxosPayload payload = (PaxosPayload) sentMsg.getPayload();
-        assertEquals(1, payload.getProposalNumber());
+        assertEquals(3, payload.getProposalNumber());
         assertEquals("testValue", payload.getProposedValue());
     }
 
@@ -155,5 +167,120 @@ public class PaxosAlgorithmTest {
         } catch (Exception e) {
             fail("Reflection failed: " + e.getMessage());
         }
+    }
+
+    @Test
+    public void generateNextProposalNumber_AcrossConcurrentProposers_NeverCollide() {
+        // Two nodes in the same 3-node cluster, each acting as a proposer.
+        // Before the node-index salting fix, both would independently generate
+        // 1, 2, 3, ... and collide on every round, which breaks Paxos safety
+        // (acceptors compare proposal numbers as plain integers across all
+        // proposers, so colliding numbers from different nodes are indistinguishable).
+        MessageRouter router1 = mock(MessageRouter.class);
+        when(router1.getRegisteredNodeIds()).thenReturn(Set.of("node1", "node2", "node3"));
+        PaxosAlgorithm node1Paxos = new PaxosAlgorithm("node1", Arrays.asList("node1", "node2", "node3"), router1);
+
+        MessageRouter router2 = mock(MessageRouter.class);
+        when(router2.getRegisteredNodeIds()).thenReturn(Set.of("node1", "node2", "node3"));
+        PaxosAlgorithm node2Paxos = new PaxosAlgorithm("node2", Arrays.asList("node1", "node2", "node3"), router2);
+
+        for (int i = 0; i < 10; i++) {
+            node1Paxos.propose("node1-value-" + i);
+            node2Paxos.propose("node2-value-" + i);
+        }
+
+        Set<Integer> node1Numbers = collectPrepareProposalNumbers(router1);
+        Set<Integer> node2Numbers = collectPrepareProposalNumbers(router2);
+
+        assertEquals(10, node1Numbers.size(), "node1 should have generated 10 distinct proposal numbers");
+        assertEquals(10, node2Numbers.size(), "node2 should have generated 10 distinct proposal numbers");
+
+        Set<Integer> intersection = new HashSet<>(node1Numbers);
+        intersection.retainAll(node2Numbers);
+        assertTrue(intersection.isEmpty(),
+                "node1 and node2 must never generate the same proposal number, but both used: " + intersection);
+    }
+
+    private Set<Integer> collectPrepareProposalNumbers(MessageRouter router) {
+        ArgumentCaptor<SimulationMessage> captor = ArgumentCaptor.forClass(SimulationMessage.class);
+        verify(router, atLeastOnce()).messageSent(captor.capture());
+        Set<Integer> numbers = new HashSet<>();
+        for (SimulationMessage msg : captor.getAllValues()) {
+            if (msg.getType() == MessageType.PREPARE_REQUEST) {
+                numbers.add(((PaxosPayload) msg.getPayload()).getProposalNumber());
+            }
+        }
+        return numbers;
+    }
+
+    @Test
+    public void onAccepted_QuorumReached_BroadcastsCommitSoAllNodesLearnChosenValue() throws Exception {
+        // Real MessageRouter + 3 real PaxosAlgorithm instances, each wrapped in a real
+        // VirtualNode so messages actually flow asynchronously between nodes, not mocked.
+        // This is the regression test for the missing Learner phase: before wiring
+        // broadcastCommit() into onAccepted(), only the proposer's PaxosState ever got
+        // a chosenValue -- the other two acceptors had no way to learn the outcome.
+        MessageRouter router = new MessageRouter();
+        List<String> nodeIds = Arrays.asList("node1", "node2", "node3");
+
+        PaxosAlgorithm node1Algorithm = new PaxosAlgorithm("node1", nodeIds, router);
+        PaxosAlgorithm node2Algorithm = new PaxosAlgorithm("node2", nodeIds, router);
+        PaxosAlgorithm node3Algorithm = new PaxosAlgorithm("node3", nodeIds, router);
+
+        List<VirtualNode> virtualNodes = new ArrayList<>();
+        virtualNodes.add(startVirtualNode("node1", node1Algorithm, router));
+        virtualNodes.add(startVirtualNode("node2", node2Algorithm, router));
+        virtualNodes.add(startVirtualNode("node3", node3Algorithm, router));
+
+        try {
+            node1Algorithm.propose("converged-value");
+
+            // Poll with a bounded timeout rather than a fixed sleep, since delivery is async.
+            Object node1Chosen = null;
+            Object node2Chosen = null;
+            Object node3Chosen = null;
+            for (int i = 0; i < 50; i++) {
+                node1Chosen = getChosenValue(node1Algorithm);
+                node2Chosen = getChosenValue(node2Algorithm);
+                node3Chosen = getChosenValue(node3Algorithm);
+                if (node1Chosen != null && node2Chosen != null && node3Chosen != null) {
+                    break;
+                }
+                Thread.sleep(100);
+            }
+
+            assertEquals("converged-value", node1Chosen, "proposer should have committed the value");
+            assertEquals("converged-value", node2Chosen,
+                    "node2 (acceptor) should have learned the chosen value via the COMMIT broadcast");
+            assertEquals("converged-value", node3Chosen,
+                    "node3 (acceptor) should have learned the chosen value via the COMMIT broadcast");
+        } finally {
+            virtualNodes.forEach(VirtualNode::stop);
+        }
+    }
+
+    private VirtualNode startVirtualNode(String nodeId, PaxosAlgorithm algorithm, MessageRouter router) {
+        Node node = new Node();
+        node.setId(nodeId);
+        node.setStatus(NodeStatus.ACTIVE);
+        // VirtualNode.processMessages() occupies one executor thread permanently (it loops
+        // forever on inboundQueue.take()) and then re-submits each dequeued message as a
+        // *second* task onto the same executor. A single-thread executor therefore starves:
+        // the loop thread never frees up, so the resubmitted processMessage() tasks can never
+        // run and messages silently vanish. At least 2 threads are required per node.
+        VirtualNode vNode = new VirtualNode(node, algorithm, router,
+                Executors.newFixedThreadPool(2),
+                new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
+        vNode.start();
+        router.registerNode(nodeId, vNode);
+        return vNode;
+    }
+
+    private Object getChosenValue(PaxosAlgorithm paxos) throws Exception {
+        java.lang.reflect.Field paxosStateField = PaxosAlgorithm.class.getDeclaredField("paxosState");
+        paxosStateField.setAccessible(true);
+        Object paxosState = paxosStateField.get(paxos);
+        java.lang.reflect.Method getChosenValueMethod = paxosState.getClass().getMethod("getChosenValue");
+        return getChosenValueMethod.invoke(paxosState);
     }
 }

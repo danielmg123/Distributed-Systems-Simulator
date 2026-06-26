@@ -42,6 +42,11 @@ public class VirtualNode {
     // Lifecycle flag.
     private volatile boolean running = false;
 
+    // Handle to the running processMessages() loop, so stop()/failNode() can interrupt
+    // a blocked inboundQueue.take() immediately instead of waiting for the next message
+    // to arrive before the loop notices `running` flipped to false.
+    private volatile Future<?> processingLoopFuture;
+
     // All dependencies are provided via the constructor.
     public VirtualNode(Node node,
                        ConsensusAlgorithm algorithm,
@@ -57,21 +62,43 @@ public class VirtualNode {
 
     /**
      * Starts the virtual node: it schedules its message processing loop and the phi-checker.
+     * Idempotent -- calling this on an already-running node is a no-op, so failNode()/
+     * recoverNode() can call stop()/start() repeatedly without side effects.
      */
     public void start() {
+        if (running) {
+            return;
+        }
         running = true;
-        // Submit the main message processing loop to the provided executor.
-        messageProcessingExecutor.submit(this::processMessages);
+        // Submit the main message processing loop to the provided executor, keeping a
+        // handle to it so stop() can interrupt it immediately rather than waiting for
+        // the next message.
+        processingLoopFuture = messageProcessingExecutor.submit(this::processMessages);
         // Start the phi-checking task on the injected scheduler.
         startPhiChecker();
     }
 
     /**
-     * Stops the virtual node.
+     * Stops the virtual node: halts message processing, the phi-checker, and the
+     * heartbeat. Idempotent -- calling this on an already-stopped node is a no-op.
+     * <p>
+     * Cancelling {@link #processingLoopFuture} with {@code mayInterruptIfRunning=true}
+     * interrupts a blocked {@code inboundQueue.take()} immediately; without this, the
+     * processing loop would only notice {@code running} flipped to false after its next
+     * message arrives, which could be never.
      */
     public void stop() {
+        if (!running) {
+            return;
+        }
         running = false;
+        if (processingLoopFuture != null) {
+            processingLoopFuture.cancel(true);
+        }
         stopPhiChecker();
+        if (heartbeat != null) {
+            heartbeat.stop();
+        }
     }
 
     /**
@@ -146,17 +173,40 @@ public class VirtualNode {
     }
 
     /**
-     * Marks the node as failed.
+     * Marks the node as failed and actually makes it stop participating: halts message
+     * processing (so it neither reacts to nor learns about further protocol traffic),
+     * the phi-checker, and the heartbeat. Idempotent -- calling this on an
+     * already-failed node is a no-op.
+     * <p>
+     * Note this only stops the node's own ability to send/process messages. As of this
+     * change, {@link MessageRouter#messageSent(SimulationMessage)} still attempts
+     * delivery to FAILED nodes the same as any other node -- those messages will now
+     * simply sit in this node's inbound queue forever rather than being processed
+     * (since the processing loop is stopped). Making the router itself drop messages
+     * to/from FAILED nodes is a separate, still-open piece of work.
      */
     public void failNode() {
+        if (node.getStatus() == NodeStatus.FAILED) {
+            return;
+        }
         node.setStatus(NodeStatus.FAILED);
+        stop();
     }
 
     /**
-     * Recovers the node (marks it as active).
+     * Recovers a failed node: marks it active again and resumes message processing,
+     * the phi-checker, and the heartbeat. Idempotent -- calling this on a node that
+     * isn't currently FAILED is a no-op.
      */
     public void recoverNode() {
+        if (node.getStatus() != NodeStatus.FAILED) {
+            return;
+        }
         node.setStatus(NodeStatus.ACTIVE);
+        start();
+        if (heartbeat != null) {
+            heartbeat.start(scheduler);
+        }
     }
 
     public String getNodeId() {

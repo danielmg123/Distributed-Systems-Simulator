@@ -167,8 +167,10 @@ public class SimulationService {
         // 2. Retrieve all Node entities that will participate in the simulation
         List<Node> nodes = nodeRepository.findAll();
 
-        // 3. Set up the shared router, consensus factory, and supporting services for the orchestrator
-        MessageRouter router = new MessageRouter();
+        // 3. Set up the shared router, consensus factory, and supporting services for the orchestrator.
+        // The router shares this service's metricsCollector so dropped-message counts
+        // (e.g. messages routed to a FAILED node) show up in getSimulationMetrics().
+        MessageRouter router = new MessageRouter(metricsCollector);
         ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(router, scheduler, simulationProperties);
         NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler, consensusFactory, simulationProperties);
         MetricsUpdateService metricsUpdateService = new MetricsUpdateService(metricsCollector, simulationWebSocketController, scheduler);
@@ -280,5 +282,23 @@ public class SimulationService {
         }
         // If running, orchestrator returns real-time data
         return orchestrator.getMetricsSnapshot();
+    }
+
+    /**
+     * <p>Retrieves the neighbor-adjacency map computed for the simulation's chosen
+     * topology, for a dashboard to render. This is visualization metadata only --
+     * see {@link com.dss.backend.messaging.TopologyPlacer} for why it does not affect
+     * how messages are actually routed between nodes.</p>
+     *
+     * @param simulationId the unique ID of the simulation.
+     * @return a map of node ID -> list of neighbor node IDs, or an empty map if the
+     *         simulation isn't currently running or no topology was configured.
+     */
+    public Map<String, List<String>> getTopologyMapping(String simulationId) {
+        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
+        if (orchestrator == null) {
+            return Map.of();
+        }
+        return orchestrator.getTopologyMapping();
     }
 }

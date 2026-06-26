@@ -80,6 +80,40 @@ public class RaftAlgorithmTest {
     }
 
     @Test
+    public void handleMessage_RequestVote_DeniedWhenCandidateLogIsLessUpToDate() throws Exception {
+        // Seed the voter's own log with an entry from a higher term than the candidate
+        // claims to have. Even though the REQUEST_VOTE's term matches our currentTerm
+        // (so the term check alone would grant it), Raft's election restriction
+        // (Section 5.4.1) requires the candidate's log to be at least as up to date as
+        // ours. A candidate with a lower-term last log entry must be denied, otherwise
+        // it could win the election and overwrite already-committed entries.
+        java.lang.reflect.Field logField = Raft.class.getDeclaredField("log");
+        logField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.List<LogEntry> voterLog = (java.util.List<LogEntry>) logField.get(raft);
+        voterLog.add(new LogEntry(5, "voter-command")); // voter's last log term = 5
+
+        RaftPayload voteRequest = new RaftPayload();
+        voteRequest.setType(MessageType.REQUEST_VOTE);
+        voteRequest.setTerm(0); // matches the voter's default currentTerm (0)
+        voteRequest.setCandidateId("node2");
+        voteRequest.setLastLogIndex(0);
+        voteRequest.setLastLogTerm(2); // candidate's last log term is lower than the voter's (5)
+
+        SimulationMessage requestMsg = SimulationMessageFactory.createMessage(
+                "node2", "node1", MessageType.REQUEST_VOTE, voteRequest, ProtocolType.RAFT);
+        raft.handleMessage(requestMsg);
+
+        ArgumentCaptor<SimulationMessage> captor = ArgumentCaptor.forClass(SimulationMessage.class);
+        verify(mockRouter, atLeastOnce()).messageSent(captor.capture());
+        SimulationMessage responseMsg = captor.getValue();
+        assertEquals(MessageType.REQUEST_VOTE_RESPONSE, responseMsg.getType());
+        RaftPayload responsePayload = (RaftPayload) responseMsg.getPayload();
+        assertFalse(responsePayload.isVoteGranted(),
+                "Vote must be denied when the candidate's log is less up to date, even if the term matches.");
+    }
+
+    @Test
     public void becomeLeader_SetsRoleAndBroadcastsHeartbeats() {
         // Invoke the private becomeLeader() method via reflection.
         try {

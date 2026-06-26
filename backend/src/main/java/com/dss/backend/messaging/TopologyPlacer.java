@@ -24,6 +24,18 @@ import java.util.*;
  * <p>
  * This utility ensures that different network topologies can be generated
  * for simulation scenarios without rewriting adjacency logic multiple times.
+ * <p>
+ * <strong>Important:</strong> the map returned here is metadata for visualization
+ * purposes only. It is <em>not</em> enforced anywhere in the message-delivery path --
+ * {@link MessageRouter} delivers every message directly from source to target
+ * regardless of topology, and every consensus algorithm's broadcast helper
+ * ({@code ConsensusBroadcaster}) reaches every registered node, not just the
+ * neighbors computed here. This is a deliberate scope decision, not an oversight:
+ * Paxos/Raft/Zab/VSR-style quorum protocols need full connectivity among all nodes to
+ * reach quorum at all, so restricting delivery to a RING/STAR/TREE neighbor map would
+ * break them outright unless multi-hop message forwarding were also implemented
+ * (it is not). Choosing a topology therefore only changes what a dashboard would draw,
+ * not how messages actually flow.
  */
 public class TopologyPlacer {
 

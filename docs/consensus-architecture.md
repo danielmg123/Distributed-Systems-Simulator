@@ -50,6 +50,16 @@ The second diagram highlights how `VirtualNode` uses the `ConsensusAlgorithm` an
     - An interface describing the contract for the various consensus protocols.
     - `VirtualNode` delegates all protocol-specific message handling to the algorithm’s `handleMessage`.
 
+> **Current limitation (as of this writing):** `MessageRouter` delivers every message
+> directly from source to target regardless of the simulation's chosen topology
+> (RING/STAR/TREE/MESH). The neighbor map computed by `TopologyPlacer` is metadata for
+> visualization only — it is not consulted by `MessageRouter` or by any consensus
+> algorithm's broadcast logic, which always reaches every registered node. Quorum-based
+> protocols need full connectivity to function at all, so this is a deliberate scope
+> decision rather than a bug: enforcing topology-restricted delivery would require
+> multi-hop message forwarding, which is not implemented. See `docs/README.md`'s "Known
+> Limitations" section (to be added) for the full list.
+
 ---
 
 ## 4. Additional Notes

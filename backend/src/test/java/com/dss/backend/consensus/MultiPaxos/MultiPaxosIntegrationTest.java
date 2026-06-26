@@ -14,6 +14,7 @@ import com.dss.backend.model.NodeStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -31,7 +32,7 @@ public class MultiPaxosIntegrationTest {
         props.setMultipaxosPrepareTimeoutMillis(10000);
         props.setMultipaxosQuorum(0); // Use default quorum calculation
 
-        leader = new MultiPaxos("node1", router, props, new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
+        leader = new MultiPaxos("node1", Arrays.asList("node1", "node2", "node3"), router, props, new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
         leader.setLeader(true);
         leader.setTotalNodes(3);
         // Register three dummy nodes as VirtualNode instances.

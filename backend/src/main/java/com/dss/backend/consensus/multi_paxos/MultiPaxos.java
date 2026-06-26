@@ -13,6 +13,7 @@ import com.dss.backend.logging.DefaultAppLogger;
 import com.dss.backend.messaging.*;
 import lombok.Getter;
 
+import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -109,19 +110,32 @@ public class MultiPaxos implements ConsensusAlgorithm {
     /** Unique ID of this node; used for routing messages and identifying log output. */
     private final String localNodeId;
 
+    /** IDs of all participating nodes (including this one), used to salt proposal numbers. */
+    private final List<String> allNodeIds;
+
+    /**
+     * This node's position within {@link #allNodeIds}. Salted into every proposal
+     * number so that concurrently proposing nodes can never generate colliding
+     * proposal numbers (see usages of {@link #proposalCounter} below).
+     */
+    private final int nodeIndex;
+
     /**
      * Constructs a MultiPaxos instance with all required dependencies.
      *
      * @param localNodeId          the local node's ID
+     * @param allNodeIds           list of all participating node IDs (including this node)
      * @param router               message router for sending/receiving messages
      * @param simulationProperties system-wide simulation properties
      * @param scheduler            scheduler for time-based tasks (timeouts, repeated checks)
      */
     public MultiPaxos(String localNodeId,
+                      List<String> allNodeIds,
                       MessageRouter router,
                       SimulationProperties simulationProperties,
                       Scheduler scheduler) {
         this.localNodeId = localNodeId;
+        this.allNodeIds = allNodeIds;
         this.router = router;
         this.simulationProperties = simulationProperties;
         this.scheduler = scheduler;
@@ -129,6 +143,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
         this.broadcaster = new ConsensusBroadcaster(router, localNodeId);
         // Fetch the prepare-phase timeout from config
         this.prepareTimeoutMillis = simulationProperties.getMultipaxosPrepareTimeoutMillis();
+        this.nodeIndex = allNodeIds.indexOf(localNodeId);
     }
 
     /**
@@ -172,7 +187,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
         if (isLeader) {
             // If we haven't completed the prepare phase, do that first.
             if (!preparePhaseCompleted) {
-                currentProposalNumber = ++proposalCounter; // move to next proposal number
+                currentProposalNumber = generateNextProposalNumber(); // move to next proposal number
                 proposerState = new ProposerState(value);
 
                 // Send PREPARE_REQUEST to gather highest accepted proposals from other nodes
@@ -189,12 +204,28 @@ public class MultiPaxos implements ConsensusAlgorithm {
 
             } else {
                 // Prepare phase is done, we can jump directly to accept requests
-                currentProposalNumber = ++proposalCounter;
+                currentProposalNumber = generateNextProposalNumber();
                 PaxosMessagingUtil.broadcastAcceptRequest(broadcaster, currentProposalNumber, value);
             }
         } else {
             appLogger.info("Node {} is not leader. It must forward proposals to the leader.", localNodeId);
         }
+    }
+
+    /**
+     * Generates a globally unique proposal number by combining a local,
+     * strictly-increasing round counter with this node's index in
+     * {@link #allNodeIds}. A plain per-node counter would let two different
+     * nodes generate the same proposal number concurrently, which breaks
+     * Paxos's safety guarantees since acceptors compare proposal numbers as
+     * plain integers across all proposers. Salting by node index guarantees
+     * every node produces a disjoint sequence of numbers.
+     *
+     * @return the next globally unique proposal number
+     */
+    private int generateNextProposalNumber() {
+        int round = ++proposalCounter;
+        return round * allNodeIds.size() + nodeIndex;
     }
 
     /**
