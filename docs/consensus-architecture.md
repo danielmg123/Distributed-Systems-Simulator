@@ -60,6 +60,21 @@ The second diagram highlights how `VirtualNode` uses the `ConsensusAlgorithm` an
 > multi-hop message forwarding, which is not implemented. See `docs/README.md`'s "Known
 > Limitations" section (to be added) for the full list.
 
+> **Node recovery is protocol-specific, by design.** `VirtualNode.recoverNode()` (and
+> the underlying `failNode()`/`recoverNode()` lifecycle) only restarts a node's message
+> processing, phi-checker, and heartbeat — it does nothing to retroactively reconcile
+> protocol state, because what "catching up" means differs by protocol:
+> - **Raft**: nothing extra is needed. Once a recovered follower resumes processing
+>   `APPEND_ENTRIES`, the leader's existing `nextIndexMap`/conflict-backoff logic in
+>   `handleAppendEntriesResponse` walks it back into sync over the next propose-triggered
+>   round trip(s) — the same mechanism that handles any follower falling behind, not
+>   special-cased recovery logic. See `RaftRecoveryIntegrationTest` for a real,
+>   non-mocked demonstration of a failed leader being replaced and the old leader
+>   catching up after recovery.
+> - **Paxos / Multi-Paxos / Zab / VSR**: there is no ordered log to catch up — a
+>   recovered node simply rejoins and participates in future rounds. Retroactively
+>   syncing whatever was decided while the node was down is explicitly out of scope.
+
 ---
 
 ## 4. Additional Notes
