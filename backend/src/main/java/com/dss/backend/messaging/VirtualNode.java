@@ -59,9 +59,11 @@ public class VirtualNode {
     }
 
     /**
-     * Starts the virtual node: it schedules its message processing loop and the phi-checker.
-     * Idempotent -- calling this on an already-running node is a no-op, so failNode()/
-     * recoverNode() can call stop()/start() repeatedly without side effects.
+     * Starts the virtual node: it schedules its message processing loop and the
+     * phi-checker, and starts any background activity the algorithm itself needs
+     * (e.g. Raft's election timer). Idempotent -- calling this on an already-running
+     * node is a no-op, so failNode()/recoverNode() can call stop()/start() repeatedly
+     * without side effects.
      */
     public void start() {
         if (running) {
@@ -72,11 +74,14 @@ public class VirtualNode {
         messageProcessingExecutor.submit(this::processMessages);
         // Start the phi-checking task on the injected scheduler.
         startPhiChecker();
+        algorithm.start();
     }
 
     /**
-     * Stops the virtual node: halts message processing, the phi-checker, and the
-     * heartbeat. Idempotent -- calling this on an already-stopped node is a no-op.
+     * Stops the virtual node: halts message processing, the phi-checker, the
+     * heartbeat, and any algorithm-level background activity (e.g. Raft's election
+     * timer) -- a failed node must be deaf and mute, not just unreachable. Idempotent
+     * -- calling this on an already-stopped node is a no-op.
      * <p>
      * {@code shutdownNow()} interrupts a blocked {@code inboundQueue.take()} immediately;
      * without this, the processing loop would only notice {@code running} flipped to
@@ -91,6 +96,7 @@ public class VirtualNode {
             messageProcessingExecutor.shutdownNow();
         }
         stopPhiChecker();
+        algorithm.stop();
         if (heartbeat != null) {
             heartbeat.stop();
         }

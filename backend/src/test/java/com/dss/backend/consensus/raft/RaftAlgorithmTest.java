@@ -1,5 +1,7 @@
 package com.dss.backend.consensus.raft;
 
+import com.dss.backend.config.SimulationProperties;
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.messaging.MessageRouter;
 import com.dss.backend.messaging.MessageType;
 import com.dss.backend.messaging.ProtocolType;
@@ -24,7 +26,9 @@ public class RaftAlgorithmTest {
     public void setUp() {
         mockRouter = mock(MessageRouter.class);
         when(mockRouter.getRegisteredNodeIds()).thenReturn(Set.of("node1", "node2", "node3"));
-        raft = new Raft("node1", Arrays.asList("node1", "node2", "node3"), mockRouter);
+        Scheduler mockScheduler = mock(Scheduler.class);
+        raft = new Raft("node1", Arrays.asList("node1", "node2", "node3"), mockRouter,
+                mockScheduler, new SimulationProperties());
     }
 
     @Test
@@ -64,19 +68,8 @@ public class RaftAlgorithmTest {
         SimulationMessage appendMsg = SimulationMessageFactory.createMessage("node2", "node1", MessageType.APPEND_ENTRIES, appendPayload, ProtocolType.RAFT);
         raft.handleMessage(appendMsg);
 
-        // Use reflection to verify that the Raft log now contains the new entry.
-        try {
-            java.lang.reflect.Field logField = Raft.class.getDeclaredField("log");
-            logField.setAccessible(true);
-            Object logObj = logField.get(raft);
-            assertTrue(logObj instanceof java.util.List);
-            java.util.List<?> logList = (java.util.List<?>) logObj;
-            assertEquals(1, logList.size());
-            LogEntry entry = (LogEntry) logList.get(0);
-            assertEquals("command1", entry.getCommand());
-        } catch (Exception e) {
-            fail("Reflection failed: " + e.getMessage());
-        }
+        assertEquals(1, raft.getLog().size());
+        assertEquals("command1", raft.getLog().get(0).getCommand());
     }
 
     @Test
@@ -113,28 +106,10 @@ public class RaftAlgorithmTest {
                 "Vote must be denied when the candidate's log is less up to date, even if the term matches.");
     }
 
-    @Test
-    public void becomeLeader_SetsRoleAndBroadcastsHeartbeats() {
-        // Invoke the private becomeLeader() method via reflection.
-        try {
-            java.lang.reflect.Method becomeLeader = Raft.class.getDeclaredMethod("becomeLeader");
-            becomeLeader.setAccessible(true);
-            becomeLeader.invoke(raft);
-
-            // Verify that the role has been updated to LEADER.
-            java.lang.reflect.Field roleField = Raft.class.getDeclaredField("role");
-            roleField.setAccessible(true);
-            Object role = roleField.get(raft);
-            assertEquals(Raft.Role.LEADER, role);
-
-            // Verify that the router was used to send at least one APPEND_ENTRIES message (heartbeats).
-            ArgumentCaptor<SimulationMessage> captor = ArgumentCaptor.forClass(SimulationMessage.class);
-            verify(mockRouter, atLeastOnce()).messageSent(captor.capture());
-            boolean heartbeatFound = captor.getAllValues().stream()
-                    .anyMatch(msg -> msg.getType() == MessageType.APPEND_ENTRIES);
-            assertTrue(heartbeatFound, "Leader should broadcast APPEND_ENTRIES as heartbeats.");
-        } catch (Exception e) {
-            fail("Reflection failed: " + e.getMessage());
-        }
-    }
+    // becomeLeader_SetsRoleAndBroadcastsHeartbeats was removed: it drove leadership by
+    // reflecting into the private becomeLeader() method. Now that Phase 3 makes
+    // triggerElection() reachable via a real (randomized) election timer,
+    // RaftClusterIntegrationTest's "boots leaderless" scenario covers the same
+    // behavior through the real public path and the new getRole()/getLog() accessors,
+    // with actual majority votes from other real nodes instead of a single mocked one.
 }

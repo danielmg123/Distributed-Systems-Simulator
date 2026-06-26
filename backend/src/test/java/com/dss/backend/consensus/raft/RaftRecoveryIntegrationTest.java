@@ -1,5 +1,6 @@
 package com.dss.backend.consensus.raft;
 
+import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.messaging.MessageRouter;
@@ -23,11 +24,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * replication -- is what catches it back up. No new catch-up machinery is added for
  * this; the point of this test is to prove the existing mechanism actually fires.
  * <p>
- * Phase 3's randomized election timeout isn't wired up yet, so elections here are
- * triggered by calling the (already public) {@link Raft#triggerElection()} directly
- * rather than waiting for a timer -- everything downstream of that call (REQUEST_VOTE
- * broadcast, vote granting, majority count, AppendEntries replication, conflict
- * backoff) runs for real over the router, nothing is mocked.
+ * Elections here are driven by calling the public {@link Raft#triggerElection()}
+ * directly rather than waiting on Phase 3's now-real randomized election timer, so this
+ * test stays fast and deterministic and isolates the catch-up mechanism from election
+ * timing. {@link RaftClusterIntegrationTest} is the complementary timer-driven test that
+ * exercises the real, fully-automatic election path end to end.
  */
 public class RaftRecoveryIntegrationTest {
 
@@ -36,10 +37,17 @@ public class RaftRecoveryIntegrationTest {
         List<String> nodeIds = Arrays.asList("node1", "node2", "node3");
         MessageRouter router = new MessageRouter();
         Scheduler scheduler = new DefaultScheduler(Executors.newSingleThreadScheduledExecutor());
+        // Set the real election timeout far longer than this test takes to run, so the
+        // automatic timer never fires and races with this test's own manual
+        // triggerElection() calls -- this test is deliberately about the catch-up
+        // mechanism, not election timing.
+        SimulationProperties simulationProperties = new SimulationProperties();
+        simulationProperties.setRaftElectionTimeoutMinMillis(60_000);
+        simulationProperties.setRaftElectionTimeoutMaxMillis(120_000);
 
-        Raft node1 = new Raft("node1", nodeIds, router);
-        Raft node2 = new Raft("node2", nodeIds, router);
-        Raft node3 = new Raft("node3", nodeIds, router);
+        Raft node1 = new Raft("node1", nodeIds, router, scheduler, simulationProperties);
+        Raft node2 = new Raft("node2", nodeIds, router, scheduler, simulationProperties);
+        Raft node3 = new Raft("node3", nodeIds, router, scheduler, simulationProperties);
 
         VirtualNode vNode1 = startVirtualNode("node1", node1, router, scheduler);
         VirtualNode vNode2 = startVirtualNode("node2", node2, router, scheduler);
@@ -88,7 +96,7 @@ public class RaftRecoveryIntegrationTest {
                     "Recovered node1's log should eventually match the current leader's log");
             assertEquals(getCommands(node2), getCommands(node3),
                     "node3's log should match the current leader's log");
-            assertEquals(Raft.Role.FOLLOWER, getRole(node1),
+            assertEquals(Raft.Role.FOLLOWER, node1.getRole(),
                     "node1 should have stepped down to FOLLOWER once it saw node2's higher term");
         } finally {
             vNode1.stop();
@@ -110,40 +118,27 @@ public class RaftRecoveryIntegrationTest {
 
     private void waitForRole(Raft raft, Raft.Role expected, String message) throws Exception {
         for (int i = 0; i < 100; i++) {
-            if (getRole(raft) == expected) {
+            if (raft.getRole() == expected) {
                 return;
             }
             Thread.sleep(20);
         }
-        fail(message + " (still " + getRole(raft) + " after timeout)");
+        fail(message + " (still " + raft.getRole() + " after timeout)");
     }
 
     private void waitForLogSize(Raft raft, int expectedSize, String label) throws Exception {
         for (int i = 0; i < 100; i++) {
-            if (getLog(raft).size() >= expectedSize) {
+            if (raft.getLog().size() >= expectedSize) {
                 return;
             }
             Thread.sleep(20);
         }
-        fail(label + "'s log never reached size " + expectedSize + " (was " + getLog(raft).size() + ")");
+        fail(label + "'s log never reached size " + expectedSize + " (was " + raft.getLog().size() + ")");
     }
 
-    private Raft.Role getRole(Raft raft) throws Exception {
-        java.lang.reflect.Field f = Raft.class.getDeclaredField("role");
-        f.setAccessible(true);
-        return (Raft.Role) f.get(raft);
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<LogEntry> getLog(Raft raft) throws Exception {
-        java.lang.reflect.Field f = Raft.class.getDeclaredField("log");
-        f.setAccessible(true);
-        return (List<LogEntry>) f.get(raft);
-    }
-
-    private List<Object> getCommands(Raft raft) throws Exception {
+    private List<Object> getCommands(Raft raft) {
         List<Object> commands = new ArrayList<>();
-        for (LogEntry entry : getLog(raft)) {
+        for (LogEntry entry : raft.getLog()) {
             commands.add(entry.getCommand());
         }
         return commands;

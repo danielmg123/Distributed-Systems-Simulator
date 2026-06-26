@@ -1,5 +1,6 @@
 package com.dss.backend.performance;
 
+import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.logging.AppLogger;
@@ -172,7 +173,14 @@ public class ConcurrencyTests {
             ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
             Scheduler scheduler = new DefaultScheduler(scheduledExecutor);
             MessageRouter router = new MessageRouter();
-            Raft follower = new Raft("follower", java.util.Arrays.asList("leader", "follower"), router);
+            // A long election timeout keeps this test isolated from Raft's own
+            // (otherwise real, randomized) election timer -- this test is about message
+            // processing order, not elections.
+            SimulationProperties simulationProperties = new SimulationProperties();
+            simulationProperties.setRaftElectionTimeoutMinMillis(60_000);
+            simulationProperties.setRaftElectionTimeoutMaxMillis(120_000);
+            Raft follower = new Raft("follower", java.util.Arrays.asList("leader", "follower"), router,
+                    scheduler, simulationProperties);
             VirtualNode followerVNode = new VirtualNode(createTestNode("follower"), follower, router, scheduler);
             router.registerNode("follower", followerVNode);
             followerVNode.start();
@@ -219,7 +227,7 @@ public class ConcurrencyTests {
                 // thread drains the queue asynchronously.
                 List<LogEntry> finalLog = null;
                 for (int i = 0; i < 100; i++) {
-                    finalLog = getFollowerLog(follower);
+                    finalLog = follower.getLog();
                     if (finalLog.size() >= entryCount) {
                         break;
                     }
@@ -238,13 +246,6 @@ public class ConcurrencyTests {
                 scheduler.shutdown();
             }
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<LogEntry> getFollowerLog(Raft raft) throws Exception {
-        java.lang.reflect.Field f = Raft.class.getDeclaredField("log");
-        f.setAccessible(true);
-        return (List<LogEntry>) f.get(raft);
     }
 
     // Helper method to create a simple Node.

@@ -1,16 +1,24 @@
 package com.dss.backend.consensus.raft;
 
+import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.consensus.AbstractConsensusAlgorithm;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.consensus.util.ConsensusUtils;
+import com.dss.backend.engine.Scheduler;
 import com.dss.backend.messaging.*;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Implements the Raft consensus algorithm, providing leader election, log replication,
@@ -82,7 +90,14 @@ public class Raft extends AbstractConsensusAlgorithm {
     // ----------------------------------------------------
     private volatile int currentTerm = 0;    // Latest term server has seen
     private volatile String votedFor = null; // Candidate ID that received vote in current term
-    private final List<LogEntry> log = new ArrayList<>(); // The Raft log
+    // The Raft log. Uses CopyOnWriteArrayList rather than a plain ArrayList: mutations
+    // are confined to this node's own single message-processing thread (Phase 2.4), but
+    // getLog() lets test code and (eventually) a dashboard poll this log from a
+    // different thread at any time. A plain ArrayList's iterator throws
+    // ConcurrentModificationException if read concurrently with a write; a
+    // CopyOnWriteArrayList iterates over a stable snapshot instead, so reads are always
+    // safe regardless of timing.
+    private final List<LogEntry> log = new CopyOnWriteArrayList<>();
 
     // ----------------------------------------------------
     // Volatile State on All Servers
@@ -107,19 +122,87 @@ public class Raft extends AbstractConsensusAlgorithm {
 
     private final ConsensusBroadcaster broadcaster;
 
+    // Used to schedule the randomized election timeout.
+    private final Scheduler scheduler;
+    private final long electionTimeoutMinMillis;
+    private final long electionTimeoutMaxMillis;
+    private final Random random = new Random();
+
+    // Handle to the currently pending election-timeout task, so a new event that should
+    // delay the next election (a heartbeat, a granted vote, starting a new candidacy)
+    // can cancel and reschedule it rather than letting a stale timeout fire early.
+    private volatile ScheduledFuture<?> electionTimerFuture;
+
     /**
      * Constructor for Raft, initializing the node’s ID, known node list,
-     * and the shared {@link MessageRouter}.
+     * the shared {@link MessageRouter}, and the dependencies needed for the
+     * randomized election timeout.
      *
-     * @param nodeId     the ID of this node
-     * @param allNodeIds a list of IDs for all nodes in the cluster
-     * @param router     the message router used to send/receive {@link SimulationMessage}s
+     * @param nodeId                the ID of this node
+     * @param allNodeIds            a list of IDs for all nodes in the cluster
+     * @param router                the message router used to send/receive {@link SimulationMessage}s
+     * @param scheduler             used to schedule the randomized election timeout
+     * @param simulationProperties  supplies the election timeout range (min/max millis)
      */
-    public Raft(String nodeId, List<String> allNodeIds, MessageRouter router) {
+    public Raft(String nodeId, List<String> allNodeIds, MessageRouter router,
+                Scheduler scheduler, SimulationProperties simulationProperties) {
         this.myNodeId = nodeId;
         this.allNodeIds = allNodeIds;
         this.router = router;
         this.broadcaster = new ConsensusBroadcaster(router, myNodeId);
+        this.scheduler = scheduler;
+        this.electionTimeoutMinMillis = simulationProperties.getRaftElectionTimeoutMinMillis();
+        this.electionTimeoutMaxMillis = simulationProperties.getRaftElectionTimeoutMaxMillis();
+    }
+
+    /**
+     * Starts this node's randomized election timer. Called by {@code VirtualNode.start()}
+     * right after construction (and again on recovery from a failure) -- this is the
+     * only thing that ever calls {@link #triggerElection()} outside of a test.
+     */
+    @Override
+    public void start() {
+        resetElectionTimer();
+    }
+
+    /**
+     * Stops this node's election timer. Called by {@code VirtualNode.stop()} (including
+     * on {@code failNode()}), so a failed node never spuriously starts an election while
+     * it's supposed to be deaf and mute.
+     */
+    @Override
+    public void stop() {
+        if (electionTimerFuture != null) {
+            electionTimerFuture.cancel(false);
+        }
+    }
+
+    /**
+     * Cancels any pending election-timeout task and schedules a new one after a random
+     * delay in {@code [electionTimeoutMinMillis, electionTimeoutMaxMillis]}. Randomizing
+     * the delay (rather than using a fixed timeout) is what keeps multiple followers
+     * from all timing out and starting competing elections in lockstep (Raft §5.2).
+     * <p>
+     * The fired task only calls {@link #triggerElection()} if this node isn't already
+     * LEADER -- a leader doesn't need to time out on itself, and this same guard is what
+     * makes it safe to leave a stale timeout pending when a node becomes leader rather
+     * than explicitly cancelling it.
+     */
+    private void resetElectionTimer() {
+        if (electionTimerFuture != null) {
+            electionTimerFuture.cancel(false);
+        }
+        long delay = electionTimeoutMinMillis
+                + (long) (random.nextDouble() * (electionTimeoutMaxMillis - electionTimeoutMinMillis));
+        try {
+            electionTimerFuture = scheduler.schedule(() -> {
+                if (role != Role.LEADER) {
+                    triggerElection();
+                }
+            }, delay, TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException ex) {
+            // Scheduler is shutdown; do nothing.
+        }
     }
 
     /**
@@ -219,6 +302,11 @@ public class Raft extends AbstractConsensusAlgorithm {
         votedFor = myNodeId;
         votesReceivedPerTerm.put(currentTerm, 1); // Vote for self
         appLogger.info("{} becomes CANDIDATE for term {}", myNodeId, currentTerm);
+        // Reschedule the timeout for this new round too, so an inconclusive election
+        // (e.g. a split vote) retries after another randomized backoff instead of
+        // hanging forever -- the timer task's own role check is what prevents this from
+        // re-triggering once a leader actually emerges.
+        resetElectionTimer();
     }
 
     /**
@@ -286,6 +374,9 @@ public class Raft extends AbstractConsensusAlgorithm {
             if (candidateLogIsUpToDate) {
                 grantVote = true;
                 votedFor = candidateId;
+                // Delay our own timeout so we don't immediately compete with a
+                // candidate we just voted for (Raft §5.2).
+                resetElectionTimer();
             }
         }
 
@@ -429,11 +520,17 @@ public class Raft extends AbstractConsensusAlgorithm {
         if (leaderTerm > currentTerm) {
             becomeFollower(leaderTerm);
         }
-        // If the leader’s term is still lower, reject the append
+        // If the leader’s term is still lower, reject the append -- this is a stale
+        // leader, not a legitimate one, so it must NOT delay our own election timeout.
         if (leaderTerm < currentTerm) {
             sendAppendEntriesResponse(false, log.size(), -1, sourceNode);
             return;
         }
+
+        // Past this point the sender is a legitimate, current (or newly-promoted)
+        // leader, so reset our timeout regardless of whether the log-matching check
+        // below ends up accepting or rejecting these particular entries.
+        resetElectionTimer();
 
         // If we are a candidate or leader at the same term, convert to follower
         if (role != Role.FOLLOWER) {
@@ -568,5 +665,30 @@ public class Raft extends AbstractConsensusAlgorithm {
                 }
             }
         }
+    }
+
+    // ----------------------------------------------------------------
+    //                     TEST/INSPECTION ACCESSORS
+    // ----------------------------------------------------------------
+
+    /**
+     * @return this node's current Raft role (FOLLOWER, CANDIDATE, or LEADER).
+     */
+    public Role getRole() {
+        return role;
+    }
+
+    /**
+     * @return this node's current term.
+     */
+    public int getCurrentTerm() {
+        return currentTerm;
+    }
+
+    /**
+     * @return a read-only view of this node's log, in index order.
+     */
+    public List<LogEntry> getLog() {
+        return Collections.unmodifiableList(log);
     }
 }

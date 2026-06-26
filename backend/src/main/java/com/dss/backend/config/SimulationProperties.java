@@ -37,4 +37,14 @@ public class SimulationProperties {
      */
     private long heartbeatIntervalMillis = 1000;
 
+    /**
+     * Minimum randomized Raft election timeout, in milliseconds.
+     */
+    private long raftElectionTimeoutMinMillis = 150;
+
+    /**
+     * Maximum randomized Raft election timeout, in milliseconds.
+     */
+    private long raftElectionTimeoutMaxMillis = 300;
+
 }

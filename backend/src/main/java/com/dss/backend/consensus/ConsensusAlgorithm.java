@@ -59,4 +59,22 @@ public interface ConsensusAlgorithm {
      * @param msg the incoming message containing protocol data
      */
     void handleMessage(SimulationMessage msg);
+
+    /**
+     * Starts any background activity the algorithm needs while the node is active --
+     * e.g. Raft's randomized election timer. Called by {@code VirtualNode.start()}.
+     * Default no-op, since most protocols here are purely message-driven and need no
+     * background timers of their own.
+     */
+    default void start() {
+    }
+
+    /**
+     * Stops any background activity started by {@link #start()}. Called by
+     * {@code VirtualNode.stop()} (including on {@code failNode()}), so a failed node's
+     * algorithm-level timers go silent along with its message processing and heartbeat
+     * -- a failed node must be deaf and mute, not just unreachable. Default no-op.
+     */
+    default void stop() {
+    }
 }
