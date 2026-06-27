@@ -17,7 +17,6 @@ import com.dss.backend.service.engine.*;
 import com.dss.backend.consensus.ConsensusAlgorithmFactory;
 import com.dss.backend.config.SimulationProperties;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -69,17 +68,13 @@ public class SimulationService {
 
     private final AppLogger appLogger = new DefaultAppLogger(SimulationService.class);
 
-    @Autowired
-    private SimulationRepository simulationRepository;
-
-    @Autowired
-    private SimulationWebSocketController simulationWebSocketController;
+    private final SimulationRepository simulationRepository;
+    private final SimulationWebSocketController simulationWebSocketController;
 
     /**
      * Global simulation properties that define thread pool sizes, timeouts, etc.
      */
-    @Autowired
-    private SimulationProperties simulationProperties;
+    private final SimulationProperties simulationProperties;
 
     /**
      * In-memory mapping of simulation IDs to their active orchestrators.
@@ -92,6 +87,14 @@ public class SimulationService {
      * A shared performance metrics collector to accumulate stats across simulations.
      */
     private final PerformanceMetricsCollector metricsCollector = new DefaultMetricsCollector();
+
+    public SimulationService(SimulationRepository simulationRepository,
+                             SimulationWebSocketController simulationWebSocketController,
+                             SimulationProperties simulationProperties) {
+        this.simulationRepository = simulationRepository;
+        this.simulationWebSocketController = simulationWebSocketController;
+        this.simulationProperties = simulationProperties;
+    }
 
     /**
      * <p>Retrieves all simulations stored in the database.</p>

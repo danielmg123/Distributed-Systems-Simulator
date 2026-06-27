@@ -2,12 +2,10 @@ package com.dss.backend.service;
 
 import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.exception.ResourceNotFoundException;
-import com.dss.backend.model.Node;
 import com.dss.backend.model.Simulation;
 import com.dss.backend.model.SimulationConfig;
 import com.dss.backend.model.SimulationStatus;
 import com.dss.backend.model.TopologyType;
-import com.dss.backend.repository.NodeRepository;
 import com.dss.backend.repository.SimulationRepository;
 import com.dss.backend.controller.SimulationWebSocketController;
 import com.dss.backend.service.engine.SimulationOrchestrator;
@@ -38,18 +36,10 @@ public class SimulationServiceTests {
     private SimulationRepository simulationRepository;
 
     @Mock
-    private NodeRepository nodeRepository;
-
-    @Mock
     private SimulationWebSocketController simulationWebSocketController;
 
-    // Add a mock for SimulationProperties
     @Mock
     private SimulationProperties simulationProperties;
-
-    // Also add a mock for Scheduler to avoid NPEs.
-    @Mock
-    private com.dss.backend.engine.Scheduler scheduler;
 
     @InjectMocks
     private SimulationService simulationService;
@@ -98,13 +88,6 @@ public class SimulationServiceTests {
     @Test
     public void runSimulation_ValidId_StartsOrchestrator() {
         when(simulationRepository.findById("sim1")).thenReturn(Optional.of(simulation));
-
-        // Provide nodes with valid IDs
-        Node node1 = new Node();
-        node1.setId("node1");
-        Node node2 = new Node();
-        node2.setId("node2");
-        when(nodeRepository.findAll()).thenReturn(Arrays.asList(node1, node2));
 
         simulationService.runSimulation("sim1");
 
