@@ -145,6 +145,94 @@ public class RaftClusterIntegrationTest {
         fail("Expected the proposed entry to be committed and applied within " + timeoutMillis + "ms");
     }
 
+    /**
+     * With periodic leader heartbeats, a committed entry must reach a *majority* of nodes
+     * even with no further proposals: each heartbeat carries the leader's commitIndex, so
+     * followers advance and apply it. Before heartbeats, a follower only learned of a
+     * commit on the next proposal, so a single quiescent proposal committed on the leader
+     * alone.
+     */
+    @Test
+    public void committedEntryPropagatesToMajorityViaHeartbeats() throws Exception {
+        MessageRouter router = new MessageRouter();
+        Scheduler scheduler = new DefaultScheduler(Executors.newScheduledThreadPool(NODE_COUNT * 2));
+        List<Raft> algorithms = new ArrayList<>();
+        List<VirtualNode> virtualNodes = new ArrayList<>();
+        buildAndStartCluster(router, scheduler, algorithms, virtualNodes);
+
+        try {
+            Raft leader = waitForSingleLeader(algorithms, 2000, "initial cluster boot");
+            leader.propose("only-value");
+            waitForMajorityApplied(algorithms, 2000);
+        } finally {
+            virtualNodes.forEach(VirtualNode::stop);
+            scheduler.shutdown();
+        }
+    }
+
+    /**
+     * A healthy leader must not be displaced: its heartbeats keep followers from timing
+     * out, so over a window spanning many election timeouts the same node stays leader and
+     * the term does not advance. Before heartbeats, a quiescent cluster re-elected roughly
+     * every election-timeout interval.
+     */
+    @Test
+    public void healthyLeaderIsNotDisplacedByElections() throws Exception {
+        MessageRouter router = new MessageRouter();
+        Scheduler scheduler = new DefaultScheduler(Executors.newScheduledThreadPool(NODE_COUNT * 2));
+        List<Raft> algorithms = new ArrayList<>();
+        List<VirtualNode> virtualNodes = new ArrayList<>();
+        buildAndStartCluster(router, scheduler, algorithms, virtualNodes);
+
+        try {
+            Raft leader = waitForSingleLeader(algorithms, 2000, "initial cluster boot");
+            int termAtElection = leader.getCurrentTerm();
+
+            // Span several election-timeout windows (max timeout is 300ms).
+            Thread.sleep(1500);
+
+            assertSame(Raft.Role.LEADER, leader.getRole(), "the original leader should still be leading");
+            assertEquals(termAtElection, leader.getCurrentTerm(),
+                    "no new election should occur while the leader is healthy (term must not advance)");
+            long leaderCount = algorithms.stream().filter(r -> r.getRole() == Raft.Role.LEADER).count();
+            assertEquals(1, leaderCount, "there should still be exactly one leader");
+        } finally {
+            virtualNodes.forEach(VirtualNode::stop);
+            scheduler.shutdown();
+        }
+    }
+
+    private void buildAndStartCluster(MessageRouter router, Scheduler scheduler,
+                                      List<Raft> algorithms, List<VirtualNode> virtualNodes) {
+        SimulationProperties simulationProperties = new SimulationProperties();
+        List<String> nodeIds = new ArrayList<>();
+        for (int i = 1; i <= NODE_COUNT; i++) {
+            nodeIds.add("node" + i);
+        }
+        for (String nodeId : nodeIds) {
+            Raft raft = new Raft(nodeId, nodeIds, router, scheduler, simulationProperties);
+            algorithms.add(raft);
+            virtualNodes.add(startVirtualNode(nodeId, raft, router, scheduler));
+        }
+    }
+
+    /**
+     * Polls until at least a majority of nodes have applied a committed entry.
+     */
+    private void waitForMajorityApplied(List<Raft> algorithms, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            long applied = algorithms.stream().filter(r -> r.getLastApplied() >= 1).count();
+            if (applied >= MAJORITY) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        long applied = algorithms.stream().filter(r -> r.getLastApplied() >= 1).count();
+        fail("Expected a majority (" + MAJORITY + ") of nodes to apply the entry within "
+                + timeoutMillis + "ms, only reached " + applied);
+    }
+
     private VirtualNode startVirtualNode(String nodeId, Raft algorithm, MessageRouter router, Scheduler scheduler) {
         Node node = new Node();
         node.setId(nodeId);

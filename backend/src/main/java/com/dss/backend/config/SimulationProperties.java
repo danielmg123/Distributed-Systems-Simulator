@@ -47,4 +47,11 @@ public class SimulationProperties {
      */
     private long raftElectionTimeoutMaxMillis = 300;
 
+    /**
+     * Interval at which a Raft leader sends heartbeats (empty AppendEntries), in
+     * milliseconds. Must be comfortably smaller than the minimum election timeout so
+     * followers don't time out and start spurious elections while a leader is healthy.
+     */
+    private long raftHeartbeatIntervalMillis = 50;
+
 }

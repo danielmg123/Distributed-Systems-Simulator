@@ -132,12 +132,17 @@ public class Raft extends AbstractConsensusAlgorithm {
     private final Scheduler scheduler;
     private final long electionTimeoutMinMillis;
     private final long electionTimeoutMaxMillis;
+    private final long heartbeatIntervalMillis;
     private final Random random = new Random();
 
     // Handle to the currently pending election-timeout task, so a new event that should
     // delay the next election (a heartbeat, a granted vote, starting a new candidacy)
     // can cancel and reschedule it rather than letting a stale timeout fire early.
     private volatile ScheduledFuture<?> electionTimerFuture;
+
+    // Handle to the leader's periodic heartbeat task. Non-null only while this node is
+    // leader; cancelled when it steps down or stops.
+    private volatile ScheduledFuture<?> heartbeatTimerFuture;
 
     /**
      * Constructor for Raft, initializing the node’s ID, known node list,
@@ -159,6 +164,7 @@ public class Raft extends AbstractConsensusAlgorithm {
         this.scheduler = scheduler;
         this.electionTimeoutMinMillis = simulationProperties.getRaftElectionTimeoutMinMillis();
         this.electionTimeoutMaxMillis = simulationProperties.getRaftElectionTimeoutMaxMillis();
+        this.heartbeatIntervalMillis = simulationProperties.getRaftHeartbeatIntervalMillis();
     }
 
     /**
@@ -180,6 +186,44 @@ public class Raft extends AbstractConsensusAlgorithm {
     public void stop() {
         if (electionTimerFuture != null) {
             electionTimerFuture.cancel(false);
+        }
+        stopHeartbeat();
+    }
+
+    /**
+     * Starts (or restarts) the leader's periodic heartbeat: every
+     * {@code heartbeatIntervalMillis} it re-broadcasts {@code APPEND_ENTRIES} while this
+     * node remains LEADER. This is what keeps a healthy leader from being displaced --
+     * each heartbeat resets followers' election timers (Raft §5.2) -- and what propagates
+     * the leader's {@code commitIndex} to followers so they can advance and apply
+     * committed entries even when no new commands are being proposed. The first run fires
+     * immediately so leadership is asserted the moment the node is elected.
+     */
+    private void startHeartbeat() {
+        stopHeartbeat();
+        try {
+            heartbeatTimerFuture = scheduler.scheduleAtFixedRate(() -> {
+                try {
+                    if (role == Role.LEADER) {
+                        broadcastAppendEntries();
+                    }
+                } catch (Exception e) {
+                    // Never let an exception kill the periodic task.
+                    appLogger.error("Raft {} heartbeat failed: {}", myNodeId, e.getMessage(), e);
+                }
+            }, 0, heartbeatIntervalMillis, TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException ex) {
+            // Scheduler is shutdown; do nothing.
+        }
+    }
+
+    /**
+     * Cancels the periodic heartbeat, if any. Called when this node steps down to
+     * follower or stops entirely, so a non-leader never keeps heartbeating.
+     */
+    private void stopHeartbeat() {
+        if (heartbeatTimerFuture != null) {
+            heartbeatTimerFuture.cancel(false);
         }
     }
 
@@ -438,6 +482,8 @@ public class Raft extends AbstractConsensusAlgorithm {
         role = Role.FOLLOWER;
         currentTerm = newTerm;
         votedFor = null;
+        // No longer leader -- stop heartbeating.
+        stopHeartbeat();
     }
 
     /**
@@ -458,8 +504,9 @@ public class Raft extends AbstractConsensusAlgorithm {
         // The leader obviously is caught up to its own log
         matchIndexMap.put(myNodeId, lastLogIndex);
 
-        // Send heartbeats (AppendEntries) to all followers
-        broadcastAppendEntries();
+        // Begin sending periodic heartbeats (the first one fires immediately, asserting
+        // leadership and replicating right away).
+        startHeartbeat();
     }
 
     // ----------------------------------------------------------------
@@ -489,7 +536,11 @@ public class Raft extends AbstractConsensusAlgorithm {
         int nextIndex = nextIndexMap.getOrDefault(follower, log.size());
         List<LogEntry> newEntries = new ArrayList<>();
         if (nextIndex < log.size()) {
-            newEntries = log.subList(nextIndex, log.size());
+            // Copy the slice into a stable list: heartbeats broadcast from the scheduler
+            // thread, so the leader's log can be mutated concurrently by its own
+            // processing thread, and a CopyOnWriteArrayList sublist view is not safe to
+            // hand off under that.
+            newEntries = new ArrayList<>(log.subList(nextIndex, log.size()));
         }
         int prevLogIndex = nextIndex - 1;
         int prevLogTerm = (prevLogIndex >= 0) ? log.get(prevLogIndex).getTerm() : -1;
