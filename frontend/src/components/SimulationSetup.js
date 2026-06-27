@@ -3,10 +3,9 @@ import { api } from "../api";
 
 const TOPOLOGY_TYPES = ["MESH", "RING", "STAR", "TREE"];
 
-// Creates the node pool and the simulation, then runs it. The backend currently
-// initializes a simulation with every persisted node (not just nodeCount of them --
-// see SimulationService.runSimulation), so this seeds exactly nodeCount fresh nodes
-// each time to keep the demo predictable.
+// Creates a simulation from the form config and runs it. The backend builds the
+// simulation's nodes from config.nodeCount (see SimulationService.runSimulation),
+// so the UI just creates and runs -- no separate node seeding needed.
 export default function SimulationSetup({ onSimulationStarted }) {
   const [algorithms, setAlgorithms] = useState([]);
   const [name, setName] = useState("Demo Simulation");
@@ -33,16 +32,6 @@ export default function SimulationSetup({ onSimulationStarted }) {
     setBusy(true);
     setError(null);
     try {
-      // Clear out nodes from any previous demo run -- runSimulation() currently pulls
-      // in every persisted node regardless of nodeCount, so leftovers would silently
-      // join this new simulation too.
-      const existing = await api.getNodes();
-      await Promise.all(existing.map((n) => api.deleteNode(n.id)));
-
-      for (let i = 1; i <= nodeCount; i++) {
-        await api.createNode({ id: `node${i}`, address: `10.0.0.${i}`, status: "ACTIVE" });
-      }
-
       const simulation = await api.createSimulation({
         name,
         config: {

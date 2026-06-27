@@ -12,7 +12,6 @@ import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.metrics.PerformanceMetricsCollector;
 import com.dss.backend.metrics.DefaultMetricsCollector;
 import com.dss.backend.model.*;
-import com.dss.backend.repository.NodeRepository;
 import com.dss.backend.repository.SimulationRepository;
 import com.dss.backend.service.engine.*;
 import com.dss.backend.consensus.ConsensusAlgorithmFactory;
@@ -22,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -71,9 +71,6 @@ public class SimulationService {
 
     @Autowired
     private SimulationRepository simulationRepository;
-
-    @Autowired
-    private NodeRepository nodeRepository;
 
     @Autowired
     private SimulationWebSocketController simulationWebSocketController;
@@ -160,8 +157,20 @@ public class SimulationService {
         Simulation simulation = simulationRepository.findById(simulationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + simulationId));
 
-        // 2. Retrieve all Node entities that will participate in the simulation
-        List<Node> nodes = nodeRepository.findAll();
+        // 2. Build this simulation's node set from its configured node count. Nodes are
+        //    ephemeral to the run -- they are NOT read from the persisted node pool, so
+        //    two simulations can't share or clobber each other's nodes and a leftover
+        //    node from an earlier run can't silently join this one.
+        SimulationConfig config = simulation.getConfig();
+        int nodeCount = (config != null && config.getNodeCount() > 0) ? config.getNodeCount() : 3;
+        List<Node> nodes = new ArrayList<>();
+        for (int i = 1; i <= nodeCount; i++) {
+            Node node = new Node();
+            node.setId("node" + i);
+            node.setAddress("10.0.0." + i);
+            node.setStatus(NodeStatus.ACTIVE);
+            nodes.add(node);
+        }
 
         // 3. Set up a fresh, per-simulation scheduler plus the router, consensus factory,
         // and supporting services for the orchestrator.
@@ -180,7 +189,6 @@ public class SimulationService {
         Scheduler scheduler = new DefaultScheduler(
                 Executors.newScheduledThreadPool(simulationProperties.getSchedulerThreadPoolSize()));
         MessageRouter router = new MessageRouter(metricsCollector, scheduler);
-        SimulationConfig config = simulation.getConfig();
         if (config != null) {
             router.setMessageLossRate(config.getMessageLossRate());
             router.setMinDelayMs(config.getMinMessageDelayMs());

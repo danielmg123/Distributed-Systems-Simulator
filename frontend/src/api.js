@@ -25,12 +25,6 @@ export const api = {
   // Algorithms
   getAlgorithms: () => request("/api/algorithms"),
 
-  // Nodes (the static, persisted node pool -- see runSimulation, which currently
-  // pulls in every persisted node regardless of the simulation's nodeCount)
-  createNode: (node) => request("/api/nodes", { method: "POST", ...json(node) }),
-  getNodes: () => request("/api/nodes"),
-  deleteNode: (id) => request(`/api/nodes/${id}`, { method: "DELETE" }),
-
   // Simulations
   createSimulation: (simulation) =>
     request("/api/simulations", { method: "POST", ...json(simulation) }),
