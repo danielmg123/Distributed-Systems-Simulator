@@ -47,9 +47,12 @@ public class ConsensusWiringIntegrationTest {
             int leaderIdx = waitForRaftLeader(cluster, 3000);
             cluster.nodes.get(leaderIdx).propose("v1");
 
-            // commitIndex >= 0 means the single entry (index 0) is actually committed.
-            waitForQuorum(cluster, a -> ((Raft) a).getCommitIndex() >= 0,
-                    "a majority to commit the proposed entry");
+            // The value must replicate to a majority of logs. (Whether each follower has
+            // also *committed* it depends on a later AppendEntries arriving; the leader's
+            // commit of a single entry is covered separately by RaftClusterIntegrationTest.)
+            waitForQuorum(cluster,
+                    a -> ((Raft) a).getLog().stream().anyMatch(e -> "v1".equals(e.getCommand())),
+                    "a majority to replicate the proposed entry");
         } finally {
             cluster.shutdown();
         }

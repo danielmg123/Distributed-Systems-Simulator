@@ -700,6 +700,15 @@ public class Raft extends AbstractConsensusAlgorithm {
     }
 
     /**
+     * @return how many log entries this node has applied to its state machine. 0 means
+     *         nothing has been applied yet; a value &gt;= 1 means the first entry has been
+     *         committed and applied.
+     */
+    public int getLastApplied() {
+        return lastApplied;
+    }
+
+    /**
      * @return a read-only view of this node's log, in index order.
      */
     public List<LogEntry> getLog() {

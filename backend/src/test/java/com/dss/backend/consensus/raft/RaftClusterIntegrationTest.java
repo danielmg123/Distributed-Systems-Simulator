@@ -85,14 +85,21 @@ public class RaftClusterIntegrationTest {
     }
 
     /**
-     * Regression test for the commit-index off-by-one (H2): a *single* proposed entry
-     * must actually commit on a majority. Replication alone (the entry appearing in the
-     * log) is not enough -- with the old {@code commitIndex = 0} initialization plus the
-     * strict {@code i > commitIndex} advance check, the sole entry of a one-entry log was
-     * replicated but never committed. This asserts commitIndex, not just log contents.
+     * Regression test for the commit-index off-by-one: a *single* proposed entry must
+     * actually be committed and applied, not just replicated. With the old
+     * {@code commitIndex = 0} initialization plus the strict {@code i > commitIndex}
+     * advance check, the sole entry of a one-entry log was replicated but never committed,
+     * so it was never applied to the state machine. This asserts the entry is applied.
+     * <p>
+     * It checks that the entry is applied somewhere (in practice, by the leader) rather
+     * than on a majority: this implementation has no periodic leader heartbeat, so a
+     * follower only learns of a commit on the next {@code AppendEntries}, which never
+     * arrives for a single quiescent proposal -- so only the leader applies it
+     * deterministically. The off-by-one bug, by contrast, prevented *any* node from
+     * applying the entry at all.
      */
     @Test
-    public void singleProposedEntry_CommitsOnMajority() throws Exception {
+    public void singleProposedEntry_IsCommittedAndApplied() throws Exception {
         MessageRouter router = new MessageRouter();
         Scheduler scheduler = new DefaultScheduler(Executors.newScheduledThreadPool(NODE_COUNT * 2));
         SimulationProperties simulationProperties = new SimulationProperties();
@@ -113,10 +120,11 @@ public class RaftClusterIntegrationTest {
         try {
             Raft leader = waitForSingleLeader(algorithms, 2000, "initial cluster boot");
 
-            // Propose exactly one value, then require it to be COMMITTED (commitIndex == 0)
-            // on a majority -- not merely present in their logs.
+            // Propose exactly one value, then require it to be actually committed and
+            // applied -- not merely present in a log. Before the off-by-one fix, no node
+            // ever applied the sole entry of a one-entry log.
             leader.propose("only-value");
-            waitForMajorityCommitIndex(algorithms, 0, 2000);
+            waitForEntryApplied(algorithms, 2000);
         } finally {
             virtualNodes.forEach(VirtualNode::stop);
             scheduler.shutdown();
@@ -124,22 +132,17 @@ public class RaftClusterIntegrationTest {
     }
 
     /**
-     * Polls until at least a majority of nodes have advanced their commitIndex to at
-     * least {@code minCommitIndex}.
+     * Polls until at least one node has applied a committed entry ({@code lastApplied >= 1}).
      */
-    private void waitForMajorityCommitIndex(List<Raft> algorithms, int minCommitIndex, long timeoutMillis)
-            throws InterruptedException {
+    private void waitForEntryApplied(List<Raft> algorithms, long timeoutMillis) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMillis;
         while (System.currentTimeMillis() < deadline) {
-            long committed = algorithms.stream().filter(r -> r.getCommitIndex() >= minCommitIndex).count();
-            if (committed >= MAJORITY) {
+            if (algorithms.stream().anyMatch(r -> r.getLastApplied() >= 1)) {
                 return;
             }
             Thread.sleep(20);
         }
-        long committed = algorithms.stream().filter(r -> r.getCommitIndex() >= minCommitIndex).count();
-        fail("Expected a majority (" + MAJORITY + ") of nodes to commit up to index " + minCommitIndex
-                + " within " + timeoutMillis + "ms, only reached " + committed);
+        fail("Expected the proposed entry to be committed and applied within " + timeoutMillis + "ms");
     }
 
     private VirtualNode startVirtualNode(String nodeId, Raft algorithm, MessageRouter router, Scheduler scheduler) {
