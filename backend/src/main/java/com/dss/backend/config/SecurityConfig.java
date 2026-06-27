@@ -1,74 +1,25 @@
 package com.dss.backend.config;
 
-import com.dss.backend.security.JwtAuthenticationFilter;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Configures Spring Security for the application.
- * <p>
- * If security is disabled (e.g., for local testing), most checks will be bypassed.
- * In production, set <code>app.security.disable=false</code> so that endpoints
- * are protected by HTTP Basic or JWT token-based authentication.
+ * Security configuration for the simulator.
+ *
+ * <p>The simulator is an <strong>unauthenticated local demo / educational tool</strong>:
+ * there is no login, no user accounts, and no token handling. Every endpoint is open.
+ * CSRF protection is disabled because the API is stateless and is only driven by the
+ * bundled dashboard. Do not expose this service on an untrusted network.</p>
  */
 @Configuration
 public class SecurityConfig {
 
-    /**
-     * Flag indicating if security should be disabled.
-     * For example, 'true' in test profiles or local development.
-     */
-    @Value("${app.security.disable:false}")
-    private boolean securityDisabled;
-
-    @Autowired
-    private JwtAuthenticationFilter jwtAuthenticationFilter;
-
-    /**
-     * Configures the {@link SecurityFilterChain} with basic constraints.
-     * <ul>
-     *   <li>If security is disabled, all requests are permitted.</li>
-     *   <li>If enabled, /api/nodes/** requires ROLE_ADMIN,
-     *       and other endpoints require at least authentication or are public.</li>
-     * </ul>
-     *
-     * @param http the {@link HttpSecurity} to configure
-     * @return the built {@link SecurityFilterChain}
-     * @throws Exception if any configuration error occurs
-     */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        if (securityDisabled) {
-            // -------------------------------------------------------------
-            // Testing / Local Dev Mode: Allow everything without auth
-            // -------------------------------------------------------------
-            http.csrf(csrf -> csrf.disable())
-                    .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
-        } else {
-            // -------------------------------------------------------------
-            // Production Mode: Secure endpoints
-            // -------------------------------------------------------------
-            http.csrf(csrf -> csrf.disable())
-                    .authorizeHttpRequests(auth -> auth
-                            // Admin role required for node mgmt
-                            .requestMatchers("/api/nodes/**").hasRole("ADMIN")
-                            // Genuinely public infrastructure endpoints only:
-                            // the WebSocket/SockJS handshake has no auth handshake of
-                            // its own, and the health endpoint is polled unauthenticated
-                            // by container/k8s liveness & readiness probes.
-                            .requestMatchers("/ws/**", "/actuator/health/**").permitAll()
-                            .anyRequest().authenticated()
-                    )
-                    // Example: using Basic auth
-                    .httpBasic(Customizer.withDefaults())
-                    .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-        }
+        http.csrf(csrf -> csrf.disable())
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
     }
 }

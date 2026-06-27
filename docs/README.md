@@ -48,9 +48,9 @@ It's intentionally plain (fetch + basic CSS, no component library) — the goal 
 
 ## Security
 
-- Security is **enabled by default**. There is no insecure fallback in the shipped `application.properties` — production requires `JWT_SECRET` to be set and fails fast at startup otherwise.
-- The JWT filter (`JwtAuthenticationFilter`) is live in the Spring Security filter chain. `/api/nodes/**` requires `ROLE_ADMIN`; all other API endpoints require authentication. The only endpoints left public are `/ws/**` (the SockJS handshake has no authentication mechanism of its own) and `/actuator/health/**` (polled unauthenticated by container/Kubernetes health probes).
-- For local development or running the test suite, activate the `dev` Spring profile (`SPRING_PROFILES_ACTIVE=dev`) to get `app.security.disable=true` and a fallback JWT secret. Tests pick this up automatically; the `docker-compose.yml` stack also runs with `dev` active for zero-config local use. **Never use the `dev` profile in a real deployment.**
+DSS is an **unauthenticated local demo / educational tool**. There is no login, no user accounts, and no token handling — every endpoint is open, and `SecurityConfig` simply permits all requests (CSRF is disabled because the API is stateless and is only driven by the bundled dashboard).
+
+This is a deliberate choice for what the project is: a single-user simulator you run on your own machine to watch consensus protocols behave. **Do not expose it on an untrusted network.** Authentication is intentionally out of scope.
 
 ## Known Limitations
 
@@ -58,9 +58,9 @@ These are deliberate scope decisions for this milestone, not bugs:
 
 - **Multi-Paxos has no leader-failure detection or re-election.** A backup node could reuse the existing per-node phi-accrual failure detector to trigger a new Prepare round, but that's future work.
 - **Topology selection doesn't constrain routing.** It's visualization metadata only (see Network Model above). Multi-hop/gossip forwarding that would make topology actually matter is out of scope.
-- **No durable or persistent log/term storage.** Every protocol's state (logs, terms, proposal numbers) is in-memory only and resets on restart. This applies uniformly across all five algorithms.
+- **No durable or persistent log/term storage.** Every protocol's state (logs, terms, proposal numbers) is in-memory only and resets on restart. This applies uniformly across all three algorithms.
 - **`GET /api/simulations/{id}/events` always returns 500.** Events are published to the WebSocket topic but are never persisted back onto the `Simulation` document, so this REST endpoint has nothing to read. The dashboard's event log consumes the WebSocket topic directly and never calls this endpoint, so the gap is dead code, not a blocking bug — but it should be fixed or removed rather than left as a 500.
-- **No self-serve way to obtain a JWT or authenticate as a new user.** There's no login or registration endpoint, and no `PasswordEncoder` bean is configured. Using HTTP Basic or JWT auth in production today requires manually inserting a `User` document into MongoDB with a properly encoded password — there's no operational path to provision one through the running application.
+- **No authentication.** The app is an unauthenticated local demo tool (see Security above); there is no login, user store, or access control. This is intentional, not a gap to be worked around.
 - **Message loss/delay are global, not per-link.** There's no way to simulate an asymmetric network partition (some node pairs cut off, others fine) — only a uniform random chance applied to every message in the simulation.
 - **No dynamic membership.** The set of nodes in a simulation is fixed once it starts; nodes can fail and recover, but none can be added or removed mid-run.
 
@@ -69,13 +69,13 @@ These are deliberate scope decisions for this milestone, not bugs:
 The codebase is organized into several top-level directories:
 
 - **backend/**
-  Spring Boot application with packages for configuration, consensus algorithms, messaging, simulation orchestration, security, and REST controllers.
+  Spring Boot application with packages for configuration, consensus algorithms, messaging, simulation orchestration, and REST controllers.
 
 - **frontend/**
-  React dashboard (node grid, live event log, controls, network sliders) — plain fetch/axios + CSS, no component library.
+  React dashboard (node grid, live event log, controls, network sliders) — plain fetch + CSS, no component library.
 
 - **deployment/**
-  Docker Compose (local dev, `dev` profile) and Kubernetes manifests (production-shaped: resource limits, liveness/readiness probes via Spring Actuator, secrets for Mongo URI and JWT secret) for running the backend and its dependencies.
+  Docker Compose (backend + frontend + MongoDB, all built from source) and Kubernetes manifests (resource limits, liveness/readiness probes via Spring Actuator, and a Secret for the Mongo URI) for running the backend and its dependencies.
 
 - **docs/**
   Architecture, sequence diagrams, the simulation lifecycle, and additional design decisions:
@@ -90,9 +90,7 @@ The codebase is organized into several top-level directories:
 **Backend** (requires MongoDB running locally on `27017`):
 ```bash
 cd backend
-SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run   # zero-config local/dev mode
-# or, for production-like behavior:
-JWT_SECRET=<your-secret> ./mvnw spring-boot:run
+./mvnw spring-boot:run
 ```
 
 **Frontend:**

@@ -17,10 +17,6 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # 'dev' profile supplies app.security.disable=true and a fallback
-      # JWT secret so this stays a zero-config local/demo stack; never use
-      # this profile in a real deployment (see kubernetes/deployment.yaml).
-      - SPRING_PROFILES_ACTIVE=dev
       - SPRING_DATA_MONGODB_URI=mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-changeme}@db:27017/dss?authSource=admin
     depends_on:
       - db
