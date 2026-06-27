@@ -26,5 +26,5 @@ public class Node {
     @Id
     private String id;
     private String address;
-    private NodeStatus status;
+    private NodeStatus status = NodeStatus.ACTIVE;
 }

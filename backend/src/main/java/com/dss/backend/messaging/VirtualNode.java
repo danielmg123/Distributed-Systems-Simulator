@@ -213,4 +213,23 @@ public class VirtualNode {
     public NodeStatus getNodeStatus() {
         return node.getStatus();
     }
+
+    /**
+     * @return this node's protocol-specific role label (e.g. Raft's "LEADER"), or
+     *         {@code null} if the underlying algorithm has no such concept.
+     */
+    public String getRoleLabel() {
+        return algorithm.getRoleLabel();
+    }
+
+    /**
+     * Delegates a proposal to this node's consensus algorithm. For leader-based
+     * protocols (Raft, Multi-Paxos), the algorithm itself ignores this unless the node
+     * is currently the leader -- callers don't need to know which node that is.
+     *
+     * @param value the value to propose
+     */
+    public void propose(Object value) {
+        algorithm.propose(value);
+    }
 }

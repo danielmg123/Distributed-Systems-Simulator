@@ -2,6 +2,8 @@ package com.dss.backend.controller;
 
 import com.dss.backend.dto.EventDTO;
 import com.dss.backend.dto.NetworkConditionsDTO;
+import com.dss.backend.dto.NodeDTO;
+import com.dss.backend.dto.ProposeRequestDTO;
 import com.dss.backend.dto.SimulationDTO;
 import com.dss.backend.mapper.EventMapper;
 import com.dss.backend.metrics.MetricsSnapshot;
@@ -93,6 +95,39 @@ public class SimulationController {
     public ResponseEntity<String> failNode(@PathVariable String id, @PathVariable String nodeId) {
         simulationService.failNode(id, nodeId);
         return ResponseEntity.ok("Node " + nodeId + " failed in simulation " + id);
+    }
+
+    @Operation(
+            summary = "Recover Node in Simulation",
+            description = "Recovers a previously-failed node within a simulation."
+    )
+    @PostMapping("/{id}/recoverNode/{nodeId}")
+    public ResponseEntity<String> recoverNode(@PathVariable String id, @PathVariable String nodeId) {
+        simulationService.recoverNode(id, nodeId);
+        return ResponseEntity.ok("Node " + nodeId + " recovered in simulation " + id);
+    }
+
+    @Operation(
+            summary = "Propose Value",
+            description = "Broadcasts a proposal to every active node in a running simulation. Each node's " +
+                    "consensus algorithm decides whether to act on it (e.g. only the current Raft leader does) " +
+                    "-- callers don't need to know which node, if any, is currently the leader."
+    )
+    @PostMapping("/{id}/propose")
+    public ResponseEntity<String> propose(@PathVariable String id, @RequestBody ProposeRequestDTO request) {
+        simulationService.propose(id, request.getValue());
+        return ResponseEntity.ok("Value proposed in simulation " + id);
+    }
+
+    @Operation(
+            summary = "Get Live Node Statuses",
+            description = "Retrieves the live status and (protocol-specific) role of every node in a running " +
+                    "simulation, for a dashboard's node grid. Unlike GET /api/nodes, which reads the static, " +
+                    "persisted node pool, this reflects this specific simulation's actual running state."
+    )
+    @GetMapping("/{id}/nodes")
+    public ResponseEntity<List<NodeDTO>> getNodeStatuses(@PathVariable String id) {
+        return ResponseEntity.ok(simulationService.getNodeStatuses(id));
     }
 
     @Operation(

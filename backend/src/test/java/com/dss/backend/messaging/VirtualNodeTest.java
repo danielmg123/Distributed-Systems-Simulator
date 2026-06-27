@@ -134,6 +134,20 @@ public class VirtualNodeTest {
     }
 
     @Test
+    public void propose_DelegatesToConsensusAlgorithm() {
+        testNode.propose("set x=1");
+        verify(consensusSpy, times(1)).propose("set x=1");
+    }
+
+    @Test
+    public void getRoleLabel_DelegatesToConsensusAlgorithm() {
+        // DummyConsensusAlgorithmSpy doesn't override getRoleLabel(), so it falls back
+        // to ConsensusAlgorithm's default (null) -- same as every non-Raft protocol here.
+        assertNull(testNode.getRoleLabel());
+        verify(consensusSpy, times(1)).getRoleLabel();
+    }
+
+    @Test
     public void phiCheckerTask_SuspectsFailureWhenPhiAboveThreshold() {
         // Create a TestVirtualNodeWithPhiSpy using a spy logger.
         AppLogger spyLogger = spy(new DefaultAppLogger(TestVirtualNodeWithPhiSpy.class));

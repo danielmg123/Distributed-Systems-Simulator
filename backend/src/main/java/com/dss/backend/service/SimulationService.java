@@ -1,6 +1,7 @@
 package com.dss.backend.service;
 
 import com.dss.backend.controller.SimulationWebSocketController;
+import com.dss.backend.dto.NodeDTO;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.exception.ResourceNotFoundException;
 import com.dss.backend.logging.AppLogger;
@@ -266,6 +267,50 @@ public class SimulationService {
         }
         // If the simulation orchestrator does not exist (simulation not running),
         // we do nothing or could log a warning.
+    }
+
+    /**
+     * <p>Recovers a previously failed node within a running simulation. A no-op if the
+     * simulation isn't currently running.</p>
+     *
+     * @param simulationId the ID of the running simulation.
+     * @param nodeId the node to recover.
+     */
+    public void recoverNode(String simulationId, String nodeId) {
+        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
+        if (orchestrator != null) {
+            orchestrator.recoverNode(simulationId, nodeId);
+        }
+    }
+
+    /**
+     * <p>Broadcasts a proposal to every active node in a running simulation. Each node's
+     * consensus algorithm decides whether to act on it (e.g. only a Raft leader does).
+     * A no-op if the simulation isn't currently running.</p>
+     *
+     * @param simulationId the ID of the running simulation.
+     * @param value the value to propose.
+     */
+    public void propose(String simulationId, Object value) {
+        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
+        if (orchestrator != null) {
+            orchestrator.propose(simulationId, value);
+        }
+    }
+
+    /**
+     * <p>Returns a live snapshot of every node's status and (protocol-specific) role for
+     * a running simulation, for a dashboard's node grid. Returns an empty list if the
+     * simulation isn't currently running.</p>
+     *
+     * @param simulationId the ID of the running simulation.
+     */
+    public List<NodeDTO> getNodeStatuses(String simulationId) {
+        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
+        if (orchestrator == null) {
+            return List.of();
+        }
+        return orchestrator.getNodeStatuses();
     }
 
     /**

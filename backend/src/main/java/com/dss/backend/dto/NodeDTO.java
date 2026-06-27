@@ -15,4 +15,9 @@ public class NodeDTO {
 
     @Schema(description = "Current status of the node", example = "ACTIVE")
     private String status;
+
+    @Schema(description = "Protocol-specific role label (e.g. Raft's LEADER/CANDIDATE/FOLLOWER); " +
+            "null for protocols with no such concept. Only meaningful for a node in a running " +
+            "simulation, not for the static node pool.", example = "LEADER")
+    private String roleLabel;
 }

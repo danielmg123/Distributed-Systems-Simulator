@@ -691,4 +691,12 @@ public class Raft extends AbstractConsensusAlgorithm {
     public List<LogEntry> getLog() {
         return Collections.unmodifiableList(log);
     }
+
+    /**
+     * @return this node's role as a display label (e.g. "LEADER"), for a dashboard.
+     */
+    @Override
+    public String getRoleLabel() {
+        return role.name();
+    }
 }

@@ -112,4 +112,9 @@ public class RaftAlgorithmTest {
     // RaftClusterIntegrationTest's "boots leaderless" scenario covers the same
     // behavior through the real public path and the new getRole()/getLog() accessors,
     // with actual majority votes from other real nodes instead of a single mocked one.
+
+    @Test
+    public void getRoleLabel_ReflectsCurrentRole() {
+        assertEquals("FOLLOWER", raft.getRoleLabel(), "A freshly-constructed node starts as FOLLOWER");
+    }
 }

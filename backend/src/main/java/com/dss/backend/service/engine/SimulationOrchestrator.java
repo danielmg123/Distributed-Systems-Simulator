@@ -1,5 +1,6 @@
 package com.dss.backend.service.engine;
 
+import com.dss.backend.dto.NodeDTO;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.messaging.MessageRouter;
 import com.dss.backend.messaging.VirtualNode;
@@ -9,9 +10,11 @@ import com.dss.backend.logging.DefaultAppLogger;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.model.EventType;
 import com.dss.backend.model.Node;
+import com.dss.backend.model.NodeStatus;
 import com.dss.backend.model.SimulationConfig;
 import com.dss.backend.model.TopologyType;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -192,6 +195,75 @@ public class SimulationOrchestrator {
                     EventType.NODE_FAILED
             );
         }
+    }
+
+    /**
+     * Allows an external caller to recover a previously failed node on demand.
+     * Mechanically this is just {@link VirtualNode#recoverNode()} -- what "catching
+     * up" means afterward is protocol-specific (see {@code docs/consensus-architecture.md}).
+     *
+     * @param simulationId ID of the simulation
+     * @param nodeId       ID of the node to recover
+     */
+    public void recoverNode(String simulationId, String nodeId) {
+        VirtualNode vNode = nodeMap.get(nodeId);
+        if (vNode != null) {
+            vNode.recoverNode();
+            eventLoggerService.logEvent(
+                    simulationId,
+                    "Node " + nodeId + " has been recovered manually.",
+                    EventType.NODE_RECOVERED
+            );
+        }
+    }
+
+    /**
+     * Broadcasts a proposal to every currently-active node, letting each node's
+     * consensus algorithm decide whether to act on it (e.g. Raft followers ignore it;
+     * only the leader appends and replicates). Callers don't need to know which node,
+     * if any, is currently the leader.
+     *
+     * @param simulationId ID of the simulation
+     * @param value        the value to propose
+     */
+    public void propose(String simulationId, Object value) {
+        if (nodeMap == null) {
+            return;
+        }
+        for (VirtualNode vNode : nodeMap.values()) {
+            if (vNode.getNodeStatus() == NodeStatus.ACTIVE) {
+                vNode.propose(value);
+            }
+        }
+        eventLoggerService.logEvent(
+                simulationId,
+                "Value proposed: " + value,
+                EventType.VALUE_PROPOSED
+        );
+    }
+
+    /**
+     * Returns a live snapshot of every node's status and (protocol-specific) role, for
+     * a dashboard's node grid. Unlike {@code GET /api/nodes}, which reads the static,
+     * persisted node pool, this reflects this specific simulation's actual running
+     * {@link VirtualNode} state.
+     *
+     * @return a list of {@link NodeDTO}s, or an empty list if this simulation hasn't
+     *         initialized any nodes yet
+     */
+    public List<NodeDTO> getNodeStatuses() {
+        if (nodeMap == null) {
+            return Collections.emptyList();
+        }
+        List<NodeDTO> statuses = new ArrayList<>();
+        for (VirtualNode vNode : nodeMap.values()) {
+            NodeDTO dto = new NodeDTO();
+            dto.setId(vNode.getNodeId());
+            dto.setStatus(vNode.getNodeStatus().name());
+            dto.setRoleLabel(vNode.getRoleLabel());
+            statuses.add(dto);
+        }
+        return statuses;
     }
 
     /**

@@ -224,4 +224,85 @@ public class SimulationServiceTests {
         // No orchestrator registered for "nonexistent-sim" -- must not throw.
         assertDoesNotThrow(() -> simulationService.updateNetworkConditions("nonexistent-sim", 0.5, 10L, 100L));
     }
+
+    @Test
+    public void recoverNode_ValidSimulationAndNode_CallsOrchestratorRecoverNode() {
+        try {
+            Field field = SimulationService.class.getDeclaredField("orchestrators");
+            field.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, SimulationOrchestrator> orchestrators = (Map<String, SimulationOrchestrator>) field.get(simulationService);
+
+            SimulationOrchestrator dummyOrch = mock(SimulationOrchestrator.class);
+            orchestrators.put("sim1", dummyOrch);
+
+            simulationService.recoverNode("sim1", "node1");
+
+            verify(dummyOrch, times(1)).recoverNode("sim1", "node1");
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            fail("Reflection error: " + e.getMessage());
+        }
+    }
+
+    @Test
+    public void recoverNode_NoRunningSimulation_IsNoOp() {
+        assertDoesNotThrow(() -> simulationService.recoverNode("nonexistent-sim", "node1"));
+    }
+
+    @Test
+    public void propose_ValidRunningSimulation_CallsOrchestratorPropose() {
+        try {
+            Field field = SimulationService.class.getDeclaredField("orchestrators");
+            field.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, SimulationOrchestrator> orchestrators = (Map<String, SimulationOrchestrator>) field.get(simulationService);
+
+            SimulationOrchestrator dummyOrch = mock(SimulationOrchestrator.class);
+            orchestrators.put("sim1", dummyOrch);
+
+            simulationService.propose("sim1", "set x=1");
+
+            verify(dummyOrch, times(1)).propose("sim1", "set x=1");
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            fail("Reflection error: " + e.getMessage());
+        }
+    }
+
+    @Test
+    public void propose_NoRunningSimulation_IsNoOp() {
+        assertDoesNotThrow(() -> simulationService.propose("nonexistent-sim", "set x=1"));
+    }
+
+    @Test
+    public void getNodeStatuses_RunningSimulation_ReturnsOrchestratorsStatuses() {
+        try {
+            Field field = SimulationService.class.getDeclaredField("orchestrators");
+            field.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, SimulationOrchestrator> orchestrators = (Map<String, SimulationOrchestrator>) field.get(simulationService);
+
+            SimulationOrchestrator dummyOrch = mock(SimulationOrchestrator.class);
+            com.dss.backend.dto.NodeDTO node1 = new com.dss.backend.dto.NodeDTO();
+            node1.setId("node1");
+            node1.setStatus("ACTIVE");
+            node1.setRoleLabel("LEADER");
+            when(dummyOrch.getNodeStatuses()).thenReturn(List.of(node1));
+            orchestrators.put("sim1", dummyOrch);
+
+            List<com.dss.backend.dto.NodeDTO> result = simulationService.getNodeStatuses("sim1");
+
+            assertEquals(1, result.size());
+            assertEquals("LEADER", result.get(0).getRoleLabel());
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            fail("Reflection error: " + e.getMessage());
+        }
+    }
+
+    @Test
+    public void getNodeStatuses_NoRunningSimulation_ReturnsEmptyList() {
+        List<com.dss.backend.dto.NodeDTO> result = simulationService.getNodeStatuses("nonexistent-sim");
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
 }

@@ -138,4 +138,50 @@ public class SimulationControllerTest {
 
         Mockito.verify(simulationService).updateNetworkConditions("sim1", 0.2, 50L, 250L);
     }
+
+    @Test
+    @WithMockUser(username = "user", roles = {"USER"})
+    public void recoverNode_ValidIds_RecoversNode() throws Exception {
+        Mockito.doNothing().when(simulationService).recoverNode("sim1", "node1");
+
+        mockMvc.perform(post("/api/simulations/sim1/recoverNode/node1"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Node node1 recovered in simulation sim1")));
+
+        Mockito.verify(simulationService).recoverNode("sim1", "node1");
+    }
+
+    @Test
+    @WithMockUser(username = "user", roles = {"USER"})
+    public void propose_ValidRequest_DelegatesToService() throws Exception {
+        com.dss.backend.dto.ProposeRequestDTO request = new com.dss.backend.dto.ProposeRequestDTO();
+        request.setValue("set x=1");
+
+        Mockito.doNothing().when(simulationService).propose("sim1", "set x=1");
+
+        mockMvc.perform(post("/api/simulations/sim1/propose")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Value proposed in simulation sim1")));
+
+        Mockito.verify(simulationService).propose("sim1", "set x=1");
+    }
+
+    @Test
+    @WithMockUser(username = "user", roles = {"USER"})
+    public void getNodeStatuses_ValidId_ReturnsLiveNodeStatuses() throws Exception {
+        com.dss.backend.dto.NodeDTO node1 = new com.dss.backend.dto.NodeDTO();
+        node1.setId("node1");
+        node1.setStatus("ACTIVE");
+        node1.setRoleLabel("LEADER");
+
+        Mockito.when(simulationService.getNodeStatuses("sim1")).thenReturn(java.util.List.of(node1));
+
+        mockMvc.perform(get("/api/simulations/sim1/nodes"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id", is("node1")))
+                .andExpect(jsonPath("$[0].status", is("ACTIVE")))
+                .andExpect(jsonPath("$[0].roleLabel", is("LEADER")));
+    }
 }

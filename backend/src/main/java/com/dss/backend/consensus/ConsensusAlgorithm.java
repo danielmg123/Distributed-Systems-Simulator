@@ -77,4 +77,16 @@ public interface ConsensusAlgorithm {
      */
     default void stop() {
     }
+
+    /**
+     * Returns a short, protocol-specific label describing this node's current role
+     * within the protocol (e.g. Raft's "LEADER"/"CANDIDATE"/"FOLLOWER"), for display in
+     * a dashboard. Default {@code null}, since most protocols here don't have a
+     * meaningful per-node role concept the way leader-election protocols do.
+     *
+     * @return a role label, or {@code null} if this protocol has no such concept
+     */
+    default String getRoleLabel() {
+        return null;
+    }
 }
