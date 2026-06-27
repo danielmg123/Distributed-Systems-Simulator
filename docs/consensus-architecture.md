@@ -5,7 +5,7 @@
 
 ## 1. Introduction
 
-This document focuses on the **Consensus Algorithm Hierarchy** (Paxos, Raft, MultiPaxos, Zab, etc.) and how these algorithms integrate with the simulator's `VirtualNode` and `MessageRouter` components. It is intended to complement the broader _high-level-architecture.md_ document by providing more detailed UML class diagrams.
+This document focuses on the **Consensus Algorithm Hierarchy** (Paxos, Raft, Multi-Paxos) and how these algorithms integrate with the simulator's `VirtualNode` and `MessageRouter` components. It is intended to complement the broader _high-level-architecture.md_ document by providing more detailed UML class diagrams.
 
 ---
 
@@ -24,9 +24,7 @@ Below is a UML representation of the inheritance and implementation relationship
 3. **Concrete Algorithms**
     - **PaxosAlgorithm** (basic Paxos)
     - **MultiPaxos** (an optimization of Paxos)
-    - **Raft**
-    - **Zab** (ZooKeeper Atomic Broadcast)
-    - **ViewStampedReplication** (VSR)  
+    - **Raft**  
       Each implements protocol-specific state and message handling.
 
 ---
@@ -71,7 +69,7 @@ The second diagram highlights how `VirtualNode` uses the `ConsensusAlgorithm` an
 >   special-cased recovery logic. See `RaftRecoveryIntegrationTest` for a real,
 >   non-mocked demonstration of a failed leader being replaced and the old leader
 >   catching up after recovery.
-> - **Paxos / Multi-Paxos / Zab / VSR**: there is no ordered log to catch up — a
+> - **Paxos / Multi-Paxos**: there is no ordered log to catch up — a
 >   recovered node simply rejoins and participates in future rounds. Retroactively
 >   syncing whatever was decided while the node was down is explicitly out of scope.
 

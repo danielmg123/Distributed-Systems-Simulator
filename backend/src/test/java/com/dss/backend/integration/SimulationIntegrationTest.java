@@ -1,6 +1,7 @@
 package com.dss.backend.integration;
 
 import com.dss.backend.config.SimulationProperties;
+import com.dss.backend.dto.NodeDTO;
 import com.dss.backend.dto.SimulationConfigDTO;
 import com.dss.backend.dto.SimulationDTO;
 import com.dss.backend.metrics.MetricsSnapshot;
@@ -24,6 +25,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
@@ -164,5 +166,64 @@ public class SimulationIntegrationTest {
         mockMvc.perform(post("/api/simulations/" + simId + "/stop"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Simulation stopped for ID: " + simId)));
+    }
+
+    /**
+     * Regression test for the per-simulation scheduler fix (B2).
+     * <p>
+     * The scheduler used to be a shared singleton bean that {@code stopSimulation}
+     * shut down globally, so the <em>second</em> simulation in a process silently lost
+     * its Raft election timers and never elected a leader. This test runs a Raft
+     * simulation, stops it, then runs a second one and asserts the second simulation
+     * still elects a leader -- which only holds if each run gets its own scheduler.
+     */
+    @Test
+    public void runStopRun_secondRaftSimulationStillElectsLeader() throws Exception {
+        // First simulation: run, confirm it elects a leader, then stop it (shutting
+        // down its scheduler -- which previously poisoned the shared singleton).
+        String firstId = createAndSaveRaftSimulation("First Raft Simulation");
+        simulationService.runSimulation(firstId);
+        assertTrue(waitForLeader(firstId, 5000),
+                "First simulation should elect a Raft leader");
+        simulationService.stopSimulation(firstId);
+
+        // Second simulation: with a per-run scheduler this must still elect a leader.
+        String secondId = createAndSaveRaftSimulation("Second Raft Simulation");
+        simulationService.runSimulation(secondId);
+        try {
+            assertTrue(waitForLeader(secondId, 5000),
+                    "Second simulation must still elect a leader after the first was stopped "
+                            + "(regression: a shared scheduler would be shut down by the first stop)");
+        } finally {
+            simulationService.stopSimulation(secondId);
+        }
+    }
+
+    private String createAndSaveRaftSimulation(String name) {
+        Simulation simulation = new Simulation();
+        simulation.setId(UUID.randomUUID().toString());
+        simulation.setName(name);
+        simulation.setStatus(SimulationStatus.PAUSED);
+        SimulationConfig config = new SimulationConfig();
+        config.setAlgorithmType(ConsensusAlgorithmType.RAFT);
+        config.setNodeCount(3);
+        config.setTopologyType(TopologyType.MESH);
+        config.setFailurePercentage(0.0);
+        simulation.setConfig(config);
+        simulationRepository.save(simulation);
+        return simulation.getId();
+    }
+
+    /** Polls the live node statuses until some node reports the Raft LEADER role, or the deadline passes. */
+    private boolean waitForLeader(String simulationId, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            List<NodeDTO> statuses = simulationService.getNodeStatuses(simulationId);
+            if (statuses.stream().anyMatch(n -> "LEADER".equals(n.getRoleLabel()))) {
+                return true;
+            }
+            Thread.sleep(50);
+        }
+        return false;
     }
 }

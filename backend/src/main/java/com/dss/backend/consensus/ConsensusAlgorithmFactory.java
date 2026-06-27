@@ -1,7 +1,5 @@
 package com.dss.backend.consensus;
 
-import com.dss.backend.consensus.view_stamped_replication.ViewStampedReplication;
-import com.dss.backend.consensus.zab.Zab;
 import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.model.SimulationConfig;
@@ -51,8 +49,6 @@ public class ConsensusAlgorithmFactory {
      *   <li>If type is PAXOS, returns a {@link PaxosAlgorithm}.</li>
      *   <li>If RAFT, returns a {@link Raft} instance.</li>
      *   <li>If MULTI_PAXOS, returns a {@link MultiPaxos} with additional init (leader flag, etc.).</li>
-     *   <li>If VIEW_STAMPED_REPLICATION, returns a {@link ViewStampedReplication} instance.</li>
-     *   <li>If ZAB, returns a {@link Zab} instance.</li>
      *   <li>Otherwise, throws an {@link IllegalArgumentException} for unknown algorithm types.</li>
      * </ul>
      *
@@ -80,16 +76,6 @@ public class ConsensusAlgorithmFactory {
                 // For simplicity, pick the first node as leader
                 multiPaxos.setLeader(allNodeIds.get(0).equals(nodeId));
                 return multiPaxos;
-            case VIEW_STAMPED_REPLICATION:
-                ViewStampedReplication vsr = new ViewStampedReplication();
-                vsr.setMessageRouter(router);
-                // Additional setup for VSR if needed
-                return vsr;
-            case ZAB:
-                Zab zab = new Zab();
-                zab.setMessageRouter(router);
-                // Additional setup for ZAB if needed
-                return zab;
             default:
                 // Unrecognized type
                 throw new IllegalArgumentException("Unsupported consensus algorithm: " + config.getAlgorithmType());

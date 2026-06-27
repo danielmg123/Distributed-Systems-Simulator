@@ -3,7 +3,7 @@ package com.dss.backend.consensus;
 import com.dss.backend.messaging.SimulationMessage;
 
 /**
- * Defines the contract for all consensus algorithms (e.g. Paxos, Raft, ZAB).
+ * Defines the contract for all consensus algorithms (e.g. Paxos, Raft).
  * <p>
  * Implementations should provide logic for:
  * <ul>
@@ -53,7 +53,6 @@ public interface ConsensusAlgorithm {
      * <ul>
      *   <li>Paxos: PREPARE_REQUEST, PROMISE, ACCEPT_REQUEST, ACCEPTED, etc.</li>
      *   <li>Raft: REQUEST_VOTE, APPEND_ENTRIES, etc.</li>
-     *   <li>ZAB: PROPOSAL, ACK, COMMIT, etc.</li>
      * </ul>
      *
      * @param msg the incoming message containing protocol data

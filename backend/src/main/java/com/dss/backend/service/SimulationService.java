@@ -2,6 +2,7 @@ package com.dss.backend.service;
 
 import com.dss.backend.controller.SimulationWebSocketController;
 import com.dss.backend.dto.NodeDTO;
+import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.exception.ResourceNotFoundException;
 import com.dss.backend.logging.AppLogger;
@@ -24,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
 
 /**
  * <p>
@@ -75,13 +77,6 @@ public class SimulationService {
 
     @Autowired
     private SimulationWebSocketController simulationWebSocketController;
-
-    /**
-     * A scheduler (from {@code AppConfig}) used for scheduling time-based tasks
-     * such as heartbeats, failure simulations, etc.
-     */
-    @Autowired
-    private Scheduler scheduler;
 
     /**
      * Global simulation properties that define thread pool sizes, timeouts, etc.
@@ -168,11 +163,22 @@ public class SimulationService {
         // 2. Retrieve all Node entities that will participate in the simulation
         List<Node> nodes = nodeRepository.findAll();
 
-        // 3. Set up the shared router, consensus factory, and supporting services for the orchestrator.
+        // 3. Set up a fresh, per-simulation scheduler plus the router, consensus factory,
+        // and supporting services for the orchestrator.
+        //
+        // The scheduler is created per run (not shared/singleton) on purpose: stopping a
+        // simulation shuts its scheduler down (see SimulationOrchestrator.stopSimulation),
+        // so a shared scheduler would be left permanently terminated and every later
+        // simulation would silently lose its heartbeats, Raft election timers, delayed
+        // delivery, and metrics pushes. A per-run scheduler scopes that shutdown to the
+        // one simulation being stopped and lets independent simulations run concurrently.
+        //
         // The router shares this service's metricsCollector so dropped-message counts
         // (e.g. messages routed to a FAILED node, or randomly lost) show up in
-        // getSimulationMetrics(). It also shares the scheduler so configured message
+        // getSimulationMetrics(). It also shares this run's scheduler so configured message
         // delay can actually be simulated (see setMessageLossRate/setMaxDelayMs below).
+        Scheduler scheduler = new DefaultScheduler(
+                Executors.newScheduledThreadPool(simulationProperties.getSchedulerThreadPoolSize()));
         MessageRouter router = new MessageRouter(metricsCollector, scheduler);
         SimulationConfig config = simulation.getConfig();
         if (config != null) {

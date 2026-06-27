@@ -6,7 +6,7 @@
 
 ### 1. Introduction
 
-This document provides a high-level overview of the architecture of the **Distributed Systems Simulator (DSS)**. The DSS is designed to model and experiment with various consensus algorithms (Paxos, Multi-Paxos, Raft, ZAB, and View-Stamped Replication) in a simulated environment, while providing real-time metrics, logging, and flexible deployment options.
+This document provides a high-level overview of the architecture of the **Distributed Systems Simulator (DSS)**. The DSS is designed to model and experiment with various consensus algorithms (Paxos, Multi-Paxos, and Raft) in a simulated environment, while providing real-time metrics, logging, and flexible deployment options.
 
 The codebase is structured into a **backend**, **frontend**, **database**, and **deployment** layers, reflecting a typical multi-tier application. This report highlights each major component, referencing the diagram below to illustrate the overall architecture.
 
@@ -62,7 +62,7 @@ Below is the diagram representing the high-level architecture of DSS:
      1. **Virtual Nodes**: Each node is simulated as a `VirtualNode` object, running a chosen consensus algorithm (Paxos, Raft, etc.).  
      2. **Messaging System**: Routes messages (e.g., heartbeats, proposals) between nodes via a `MessageRouter`.  
      3. **Scheduler & Heartbeat**: Manages time-based tasks (heartbeats, timeouts, etc.) with a configurable thread pool.  
-     4. **Consensus Algorithms**: Modular code for Paxos, Multi-Paxos, Raft, ZAB, and VSR.  
+     4. **Consensus Algorithms**: Modular code for Paxos, Multi-Paxos, and Raft.  
      5. **Metrics & Event Logging**: Collects performance data (throughput, latency) and logs events (node failures, commits, etc.). These updates are sent to the front-end in real time via WebSockets.
 
 6. **Deployment Layer**  
@@ -76,7 +76,7 @@ Below is the diagram representing the high-level architecture of DSS:
 ### 4. Key Architecture Highlights
 
 - **Security**: Optional JWT-based authentication/authorization. Can be disabled for local demos.  
-- **Consensus Algorithms**: Cleanly separated into packages (`paxos`, `raft`, `multi_paxos`, `zab`, `view_stamped_replication`), each implementing a common interface (`ConsensusAlgorithm`).  
+- **Consensus Algorithms**: Cleanly separated into packages (`paxos`, `raft`, `multi_paxos`), each implementing a common interface (`ConsensusAlgorithm`).  
 - **Messaging Abstraction**: The `MessageRouter` decouples node-to-node communication, enabling easy simulation of network partitions or message delays if needed.  
 - **Metrics & Logging**: Real-time metric snapshots are broadcast to the front-end, and each node logs events (commits, proposals, failures).  
 - **Scalability**: Docker and Kubernetes support allow easy scaling of the simulator or integration into CI/CD pipelines.
@@ -101,7 +101,7 @@ Below is a simplified view of the code layout:
 ├── backend
 │   ├── src/main/java/com/dss/backend
 │   │   ├── config          // Spring Boot configs, JWT filter, properties
-│   │   ├── consensus       // Paxos, Raft, Zab, VSR, etc.
+│   │   ├── consensus       // Paxos, Raft, Multi-Paxos
 │   │   ├── controller      // REST controllers
 │   │   ├── dto             // Data Transfer Objects
 │   │   ├── engine          // Simulation engine, scheduling

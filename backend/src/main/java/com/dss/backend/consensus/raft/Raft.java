@@ -102,8 +102,14 @@ public class Raft extends AbstractConsensusAlgorithm {
     // ----------------------------------------------------
     // Volatile State on All Servers
     // ----------------------------------------------------
-    private volatile int commitIndex = 0;    // Index of highest log entry known to be committed
-    private volatile int lastApplied = 0;    // Index of highest log entry applied to state machine
+    // The log is 0-indexed, so commitIndex == -1 means "nothing committed yet" (an empty
+    // committed prefix). lastApplied is the index of the next entry to apply, so it starts
+    // at 0 ("applied up to index -1"). Initializing commitIndex to 0 instead would wrongly
+    // claim entry 0 is committed and, combined with the strict `i > commitIndex` check in
+    // the commit-advance loop, would leave a single-entry log's only entry permanently
+    // uncommitted.
+    private volatile int commitIndex = -1;   // Index of highest log entry known to be committed (-1 = none)
+    private volatile int lastApplied = 0;    // Index of the next log entry to apply to the state machine
 
     // ----------------------------------------------------
     // Volatile State on Leaders (Reinitialized after election)
@@ -683,6 +689,14 @@ public class Raft extends AbstractConsensusAlgorithm {
      */
     public int getCurrentTerm() {
         return currentTerm;
+    }
+
+    /**
+     * @return the index of the highest log entry this node has committed, or -1 if it
+     *         has committed nothing yet. (The log is 0-indexed.)
+     */
+    public int getCommitIndex() {
+        return commitIndex;
     }
 
     /**

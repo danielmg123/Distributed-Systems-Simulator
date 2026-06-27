@@ -2,12 +2,16 @@ package com.dss.backend.messaging;
 
 public enum MessageType {
     // universal types
-    PROPOSAL, 
-    ACCEPT, 
-    COMMIT, 
-    HEARTBEAT, 
-    FAILURE, 
+    PROPOSAL,
+    COMMIT,
+    HEARTBEAT,
+    FAILURE,
     RECOVERY,
+
+    // node-local control signal: a client proposal injected onto a node's own inbound
+    // queue so it is handled on the node's single message-processing thread rather than
+    // on the caller's thread (see VirtualNode.propose). Never sent over the router.
+    PROPOSE,
 
     // Paxos-specific types
     PREPARE_REQUEST,
@@ -19,12 +23,5 @@ public enum MessageType {
     REQUEST_VOTE,
     REQUEST_VOTE_RESPONSE,
     APPEND_ENTRIES,
-    APPEND_ENTRIES_RESPONSE,
-
-    // ViewStamped Replication-specific types
-    PREPARE,
-    PREPARE_RESPONSE,
-
-    // ZooKeeper Atomic Broadcast-specific types
-    ACK
+    APPEND_ENTRIES_RESPONSE
 }

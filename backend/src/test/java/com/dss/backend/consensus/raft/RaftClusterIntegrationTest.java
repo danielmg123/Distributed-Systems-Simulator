@@ -84,6 +84,64 @@ public class RaftClusterIntegrationTest {
         }
     }
 
+    /**
+     * Regression test for the commit-index off-by-one (H2): a *single* proposed entry
+     * must actually commit on a majority. Replication alone (the entry appearing in the
+     * log) is not enough -- with the old {@code commitIndex = 0} initialization plus the
+     * strict {@code i > commitIndex} advance check, the sole entry of a one-entry log was
+     * replicated but never committed. This asserts commitIndex, not just log contents.
+     */
+    @Test
+    public void singleProposedEntry_CommitsOnMajority() throws Exception {
+        MessageRouter router = new MessageRouter();
+        Scheduler scheduler = new DefaultScheduler(Executors.newScheduledThreadPool(NODE_COUNT * 2));
+        SimulationProperties simulationProperties = new SimulationProperties();
+
+        List<String> nodeIds = new ArrayList<>();
+        for (int i = 1; i <= NODE_COUNT; i++) {
+            nodeIds.add("node" + i);
+        }
+
+        List<Raft> algorithms = new ArrayList<>();
+        List<VirtualNode> virtualNodes = new ArrayList<>();
+        for (String nodeId : nodeIds) {
+            Raft raft = new Raft(nodeId, nodeIds, router, scheduler, simulationProperties);
+            algorithms.add(raft);
+            virtualNodes.add(startVirtualNode(nodeId, raft, router, scheduler));
+        }
+
+        try {
+            Raft leader = waitForSingleLeader(algorithms, 2000, "initial cluster boot");
+
+            // Propose exactly one value, then require it to be COMMITTED (commitIndex == 0)
+            // on a majority -- not merely present in their logs.
+            leader.propose("only-value");
+            waitForMajorityCommitIndex(algorithms, 0, 2000);
+        } finally {
+            virtualNodes.forEach(VirtualNode::stop);
+            scheduler.shutdown();
+        }
+    }
+
+    /**
+     * Polls until at least a majority of nodes have advanced their commitIndex to at
+     * least {@code minCommitIndex}.
+     */
+    private void waitForMajorityCommitIndex(List<Raft> algorithms, int minCommitIndex, long timeoutMillis)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            long committed = algorithms.stream().filter(r -> r.getCommitIndex() >= minCommitIndex).count();
+            if (committed >= MAJORITY) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        long committed = algorithms.stream().filter(r -> r.getCommitIndex() >= minCommitIndex).count();
+        fail("Expected a majority (" + MAJORITY + ") of nodes to commit up to index " + minCommitIndex
+                + " within " + timeoutMillis + "ms, only reached " + committed);
+    }
+
     private VirtualNode startVirtualNode(String nodeId, Raft algorithm, MessageRouter router, Scheduler scheduler) {
         Node node = new Node();
         node.setId(nodeId);

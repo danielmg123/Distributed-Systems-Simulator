@@ -1,6 +1,6 @@
 # Distributed Systems Simulator (DSS)
 
-The **Distributed Systems Simulator (DSS)** models and lets you experiment with core distributed-consensus protocols — Paxos, Multi-Paxos, Raft, ZooKeeper Atomic Broadcast (Zab), and View-Stamped Replication (VSR) — over a simulated network with virtual nodes, configurable message loss/delay, and real crash-stop node failures.
+The **Distributed Systems Simulator (DSS)** models and lets you experiment with core distributed-consensus protocols — Paxos, Multi-Paxos, and Raft — over a simulated network with virtual nodes, configurable message loss/delay, and real crash-stop node failures.
 
 ## Introduction to Distributed Systems
 
@@ -20,17 +20,15 @@ The primary objectives of DSS are:
 
 ## Per-Algorithm Implementation Status
 
-Implementation depth is intentionally uneven across protocols. This is a scope decision, not an oversight — Raft is the protocol this project goes deep on; the others demonstrate their respective happy paths.
+Implementation depth is intentionally uneven across protocols. This is a scope decision, not an oversight — Raft is the protocol this project goes deep on; Paxos and Multi-Paxos demonstrate correct quorum-based agreement under crash-stop.
 
-| Algorithm | Happy path | Crash-stop semantics | Leader/view-change recovery |
+| Algorithm | Happy path | Crash-stop semantics | Leader-failure recovery |
 |---|---|---|---|
 | **Raft** | ✅ | ✅ a failed node stops processing and heartbeating entirely until recovered | ✅ randomized election timeout (150–300ms, jittered per node), real leader failure triggers a new election, vote granting includes a log-completeness check, and a recovered follower catches up automatically via the leader's existing `AppendEntries` conflict-backoff logic |
 | **Paxos** | ✅ globally unique proposal numbers, full Learner phase (every acceptor learns the chosen value via a COMMIT broadcast, not just the proposer) | ✅ Paxos has no leader, so a crashed non-quorum node doesn't block progress | N/A — no leader to fail over |
 | **Multi-Paxos** | ✅ same proposal-number/Learner-phase guarantees as Paxos, plus a stable leader to skip repeated Prepare phases | ✅ a crashed acceptor/learner that isn't the leader doesn't block progress | ❌ **not implemented.** If the Multi-Paxos leader crashes, there is no automatic re-election — this is a documented limitation (see below), not a bug |
-| **Zab** | ✅ single-leader strict ordering, quorum-based commit | ❌ no epoch or view-change recovery | ❌ happy-path demonstration only |
-| **VSR** | ✅ three-phase primary-backup protocol (PREPARE → PREPARE_RESPONSE → COMMIT) | ❌ no view-change protocol | ❌ happy-path demonstration only |
 
-For Paxos/Multi-Paxos/Zab/VSR, a recovered crashed node simply rejoins and participates in future rounds — there's no ordered log to retroactively catch it up on, unlike Raft.
+For Paxos and Multi-Paxos, a recovered crashed node simply rejoins and participates in future rounds — there's no ordered log to retroactively catch it up on, unlike Raft.
 
 ## Network Model
 
@@ -59,7 +57,6 @@ It's intentionally plain (fetch + basic CSS, no component library) — the goal 
 These are deliberate scope decisions for this milestone, not bugs:
 
 - **Multi-Paxos has no leader-failure detection or re-election.** A backup node could reuse the existing per-node phi-accrual failure detector to trigger a new Prepare round, but that's future work.
-- **Zab has no leader election or epoch-based recovery; VSR has no view-change protocol.** Both remain happy-path-only demonstrations.
 - **Topology selection doesn't constrain routing.** It's visualization metadata only (see Network Model above). Multi-hop/gossip forwarding that would make topology actually matter is out of scope.
 - **No durable or persistent log/term storage.** Every protocol's state (logs, terms, proposal numbers) is in-memory only and resets on restart. This applies uniformly across all five algorithms.
 - **`GET /api/simulations/{id}/events` always returns 500.** Events are published to the WebSocket topic but are never persisted back onto the `Simulation` document, so this REST endpoint has nothing to read. The dashboard's event log consumes the WebSocket topic directly and never calls this endpoint, so the gap is dead code, not a blocking bug — but it should be fixed or removed rather than left as a 500.
@@ -105,12 +102,13 @@ npm install
 npm start   # proxies API calls to localhost:8080
 ```
 
-**Full stack via Docker Compose:**
+**Full stack via Docker Compose** (backend + frontend + MongoDB, all built from source):
 ```bash
 cd deployment
-docker-compose up
+docker compose up --build
 ```
+Then open the dashboard at <http://localhost:3000> (nginx serves the built frontend and reverse-proxies `/api` and `/ws` to the backend).
 
 ## Conclusion
 
-The Distributed Systems Simulator provides a real (if intentionally uneven) environment for studying how consensus protocols behave under node failure and network unreliability — not just on the happy path. Raft is implemented end-to-end, including crash-stop recovery; Paxos and Multi-Paxos are correct under crash-stop short of leader failure; Zab and VSR demonstrate their core protocols without recovery machinery. For deeper design detail, see the docs listed above.
+The Distributed Systems Simulator provides a real (if intentionally uneven) environment for studying how consensus protocols behave under node failure and network unreliability — not just on the happy path. Raft is implemented end-to-end, including crash-stop recovery; Paxos and Multi-Paxos are correct under crash-stop short of leader failure. For deeper design detail, see the docs listed above.

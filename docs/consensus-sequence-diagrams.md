@@ -60,31 +60,7 @@ This document provides a detailed walkthrough of the message flows for the vario
 
 ---
 
-## 5. View Stamped Replication (VSR) Sequence Diagram
-
-![View Stamped Replication Sequence Diagram](diagrams/vsr-sequence.png)
-
-**Key Points:**
-- The primary (leader) sends a **PREPARE** message to the backups.
-- Backups respond with **PREPARE_RESPONSE** messages.
-- After receiving a quorum of responses, the primary broadcasts a **COMMIT** message.
-- Backups apply the operation upon receiving the COMMIT, ensuring consistency across replicas.
-
----
-
-## 6. Zab (ZooKeeper Atomic Broadcast) Sequence Diagram
-
-![Zab Sequence Diagram](diagrams/zab-sequence.png)
-
-**Key Points:**
-- The **Leader** initiates a proposal by sending a **PROPOSAL** message along with a unique transaction ID (zxid).
-- Followers acknowledge the proposal by sending **ACK** messages back to the Leader.
-- Once the Leader gathers a quorum of ACKs, it broadcasts a **COMMIT** message.
-- All nodes then apply the committed operation in the same order.
-
----
-
-## 7. Additional Notes
+## 5. Additional Notes
 
 - **Focus on Normal Operation:** These diagrams depict the normal, successful flow of each protocol. They do not illustrate edge cases such as timeouts, leader or network failures, or retries.
 - **Abstraction Level:** The diagrams abstract away lower-level network and concurrency details to emphasize the protocol’s core message exchanges.

@@ -131,6 +131,10 @@ public class VirtualNode {
                 long heartbeatTime = (Long) msg.getPayload();
                 PhiAccrual detector = getOrCreatePhiDetectorFor(msg.getSourceNodeId());
                 detector.recordHeartbeat(heartbeatTime);
+            } else if (msg.getType() == MessageType.PROPOSE) {
+                // A client proposal that was enqueued by propose(); run it here so it
+                // executes on this node's single processing thread, not the caller's.
+                algorithm.propose(msg.getPayload());
             } else {
                 // Delegate to the consensus algorithm (or other logic) for non-heartbeat messages.
                 algorithm.handleMessage(msg);
@@ -223,13 +227,24 @@ public class VirtualNode {
     }
 
     /**
-     * Delegates a proposal to this node's consensus algorithm. For leader-based
-     * protocols (Raft, Multi-Paxos), the algorithm itself ignores this unless the node
-     * is currently the leader -- callers don't need to know which node that is.
+     * Submits a proposal to this node's consensus algorithm. For leader-based protocols
+     * (Raft, Multi-Paxos), the algorithm itself ignores this unless the node is currently
+     * the leader -- callers don't need to know which node that is.
+     * <p>
+     * The proposal is enqueued onto this node's inbound queue (as a node-local
+     * {@link MessageType#PROPOSE} signal) rather than invoking {@code algorithm.propose()}
+     * directly. This keeps <em>all</em> mutation of a node's consensus state on its single
+     * message-processing thread: callers run on arbitrary threads (e.g. an HTTP request
+     * thread), and invoking the algorithm directly from here would race against this
+     * node's executor thread handling inbound protocol messages against the same state
+     * (Raft's log/term, Paxos's proposal maps, etc.). Consequently the proposal is
+     * processed asynchronously, after any messages already queued ahead of it.
      *
      * @param value the value to propose
      */
     public void propose(Object value) {
-        algorithm.propose(value);
+        SimulationMessage proposeMsg = new SimulationMessage(
+                getNodeId(), getNodeId(), MessageType.PROPOSE, value, ProtocolType.UNIVERSAL);
+        enqueueMessage(proposeMsg);
     }
 }

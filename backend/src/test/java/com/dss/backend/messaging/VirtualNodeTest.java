@@ -134,8 +134,17 @@ public class VirtualNodeTest {
     }
 
     @Test
-    public void propose_DelegatesToConsensusAlgorithm() {
+    public void propose_EnqueuesAndDelegatesToConsensusAlgorithmOnProcessingThread() {
+        // propose() now enqueues a node-local PROPOSE signal instead of calling the
+        // algorithm directly, so the proposal stays in the queue until processed.
         testNode.propose("set x=1");
+        assertEquals(1, testNode.getInboundQueueSize(),
+                "propose() should enqueue a PROPOSE message rather than invoke the algorithm inline");
+        verify(consensusSpy, never()).propose(any());
+
+        // Draining the queue dispatches it to the algorithm, mirroring the real
+        // single-threaded processing loop.
+        testNode.processNextMessage();
         verify(consensusSpy, times(1)).propose("set x=1");
     }
 

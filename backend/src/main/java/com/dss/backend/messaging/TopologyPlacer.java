@@ -31,7 +31,7 @@ import java.util.*;
  * regardless of topology, and every consensus algorithm's broadcast helper
  * ({@code ConsensusBroadcaster}) reaches every registered node, not just the
  * neighbors computed here. This is a deliberate scope decision, not an oversight:
- * Paxos/Raft/Zab/VSR-style quorum protocols need full connectivity among all nodes to
+ * Paxos/Raft-style quorum protocols need full connectivity among all nodes to
  * reach quorum at all, so restricting delivery to a RING/STAR/TREE neighbor map would
  * break them outright unless multi-hop message forwarding were also implemented
  * (it is not). Choosing a topology therefore only changes what a dashboard would draw,

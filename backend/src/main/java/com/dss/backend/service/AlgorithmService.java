@@ -50,9 +50,7 @@ public class AlgorithmService {
         return Arrays.asList(
                 new AlgorithmDTO("Paxos", ConsensusAlgorithmType.PAXOS),
                 new AlgorithmDTO("Raft", ConsensusAlgorithmType.RAFT),
-                new AlgorithmDTO("Multi-Paxos", ConsensusAlgorithmType.MULTI_PAXOS),
-                new AlgorithmDTO("ViewStampedReplication", ConsensusAlgorithmType.VIEW_STAMPED_REPLICATION),
-                new AlgorithmDTO("Zab", ConsensusAlgorithmType.ZAB)
+                new AlgorithmDTO("Multi-Paxos", ConsensusAlgorithmType.MULTI_PAXOS)
         );
     }
 }
