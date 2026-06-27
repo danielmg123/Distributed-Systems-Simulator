@@ -174,6 +174,14 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
     }
 
     /**
+     * @return the value this node has learned as chosen by the cluster, or {@code null}
+     *         if it hasn't learned one yet. Exposed for tests and inspection.
+     */
+    public Object getChosenValue() {
+        return paxosState.getChosenValue();
+    }
+
+    /**
      * Main entry point for handling messages from other nodes.
      * Based on the message type, we dispatch to the appropriate
      * Phase 1 (prepare/promise) or Phase 2 (accept/accepted) handler.
