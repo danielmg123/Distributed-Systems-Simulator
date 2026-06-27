@@ -71,6 +71,14 @@ public class DefaultScheduler implements Scheduler {
     }
 
     /**
+     * @return {@code true} if the underlying executor has been shut down.
+     */
+    @Override
+    public boolean isShutdown() {
+        return executorService.isShutdown();
+    }
+
+    /**
      * Blocks until all tasks have completed execution after a shutdown request,
      * or the timeout occurs, or the current thread is interrupted, whichever happens first.
      *

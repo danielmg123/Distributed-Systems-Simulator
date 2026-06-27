@@ -9,7 +9,6 @@ import com.dss.backend.messaging.ProtocolType;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 /**
  * <strong>Heartbeat</strong> sends periodic heartbeat messages to other nodes
@@ -54,12 +53,12 @@ public class Heartbeat implements HeartbeatService {
     public void start(Scheduler scheduler) {
         try {
             // Protect against scheduling on a shutdown executor
-            if (schedulerIsShutdown(scheduler)) {
+            if (scheduler.isShutdown()) {
                 return;
             }
             heartbeatFuture = scheduler.scheduleAtFixedRate(
                     () -> {
-                        if (schedulerIsShutdown(scheduler)) {
+                        if (scheduler.isShutdown()) {
                             return;
                         }
                         // Send a heartbeat message to every other node
@@ -95,16 +94,4 @@ public class Heartbeat implements HeartbeatService {
         }
     }
 
-    /**
-     * Checks if the scheduler has been shut down to prevent scheduling or running tasks.
-     *
-     * @param scheduler the scheduler in use.
-     * @return {@code true} if the scheduler is shut down, false otherwise.
-     */
-    private boolean schedulerIsShutdown(Scheduler scheduler) {
-        if (scheduler instanceof ScheduledThreadPoolExecutor) {
-            return ((ScheduledThreadPoolExecutor) scheduler).isShutdown();
-        }
-        return false;
-    }
 }

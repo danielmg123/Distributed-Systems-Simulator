@@ -47,6 +47,11 @@ public interface Scheduler {
     void shutdown();
 
     /**
+     * @return {@code true} if this scheduler has been shut down and will reject new tasks.
+     */
+    boolean isShutdown();
+
+    /**
      * Blocks until all tasks have completed execution after a shutdown request,
      * or the timeout occurs.
      *
