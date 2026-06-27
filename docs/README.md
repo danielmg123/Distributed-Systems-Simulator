@@ -1,6 +1,6 @@
 # Distributed Systems Simulator (DSS)
 
-The **Distributed Systems Simulator (DSS)** is a comprehensive framework designed to model and experiment with the core principles of distributed consensus. It provides a simulated environment to test, visualize, and compare multiple consensus algorithms such as Paxos, Multi-Paxos, Raft, ZooKeeper Atomic Broadcast (Zab), and View-Stamped Replication (VSR).
+The **Distributed Systems Simulator (DSS)** models and lets you experiment with core distributed-consensus protocols — Paxos, Multi-Paxos, Raft, ZooKeeper Atomic Broadcast (Zab), and View-Stamped Replication (VSR) — over a simulated network with virtual nodes, configurable message loss/delay, and real crash-stop node failures.
 
 ## Introduction to Distributed Systems
 
@@ -9,93 +9,108 @@ A distributed system is a network of independent computers that work together as
 - **Fault Tolerance:** Detecting and recovering from node failures without compromising system integrity.
 - **Scalability and Heterogeneity:** Handling growing numbers of nodes and diverse network conditions.
 
-In DSS, these challenges are explored by simulating how nodes interact using different consensus protocols while accounting for network topologies, message routing, and node failures.
+In DSS, these challenges are explored by simulating how nodes interact using different consensus protocols while accounting for message routing, loss, delay, and node failure/recovery.
 
 ## Project Purpose
 
 The primary objectives of DSS are:
-- **Experimentation:** To serve as a testbed for comparing consensus algorithms under controlled conditions.
-- **Education:** To provide detailed insights into how consensus is achieved in distributed systems.
-- **Simulation:** To mimic real-world distributed behavior using virtual nodes, a centralized message router, and schedulers for periodic tasks such as heartbeats and metrics collection.
+- **Experimentation:** To serve as a testbed for comparing consensus algorithms under controlled, adversarial conditions (message loss, delay, node crashes).
+- **Education:** To provide detailed, runnable insight into how consensus is actually achieved — not just described — in distributed systems.
+- **Simulation:** To mimic real-world distributed behavior using virtual nodes, a central message router, and schedulers for periodic tasks such as heartbeats, election timeouts, and metrics collection.
 
-By simulating these aspects, DSS helps researchers and developers understand both the strengths and limitations of various distributed consensus approaches.
+## Per-Algorithm Implementation Status
 
-## What is Implemented
+Implementation depth is intentionally uneven across protocols. This is a scope decision, not an oversight — Raft is the protocol this project goes deep on; the others demonstrate their respective happy paths.
 
-DSS includes the following core components and features:
+| Algorithm | Happy path | Crash-stop semantics | Leader/view-change recovery |
+|---|---|---|---|
+| **Raft** | ✅ | ✅ a failed node stops processing and heartbeating entirely until recovered | ✅ randomized election timeout (150–300ms, jittered per node), real leader failure triggers a new election, vote granting includes a log-completeness check, and a recovered follower catches up automatically via the leader's existing `AppendEntries` conflict-backoff logic |
+| **Paxos** | ✅ globally unique proposal numbers, full Learner phase (every acceptor learns the chosen value via a COMMIT broadcast, not just the proposer) | ✅ Paxos has no leader, so a crashed non-quorum node doesn't block progress | N/A — no leader to fail over |
+| **Multi-Paxos** | ✅ same proposal-number/Learner-phase guarantees as Paxos, plus a stable leader to skip repeated Prepare phases | ✅ a crashed acceptor/learner that isn't the leader doesn't block progress | ❌ **not implemented.** If the Multi-Paxos leader crashes, there is no automatic re-election — this is a documented limitation (see below), not a bug |
+| **Zab** | ✅ single-leader strict ordering, quorum-based commit | ❌ no epoch or view-change recovery | ❌ happy-path demonstration only |
+| **VSR** | ✅ three-phase primary-backup protocol (PREPARE → PREPARE_RESPONSE → COMMIT) | ❌ no view-change protocol | ❌ happy-path demonstration only |
 
-- **Consensus Algorithms:**  
-  - **Paxos & Multi-Paxos:** Implements basic Paxos along with an optimized Multi-Paxos variant where a leader reduces the overhead of repeated prepare phases.
-  - **Raft:** Provides leader election, log replication, and safety guarantees with clear separation between leader and follower roles.
-  - **ZooKeeper Atomic Broadcast (Zab):** Models a single-leader protocol for strict ordering and quorum-based commit decisions.
-  - **View-Stamped Replication (VSR):** Uses a primary-backup model with a three-phase protocol (PREPARE, PREPARE_RESPONSE, COMMIT).
+For Paxos/Multi-Paxos/Zab/VSR, a recovered crashed node simply rejoins and participates in future rounds — there's no ordered log to retroactively catch it up on, unlike Raft.
 
-- **Virtual Node and Messaging Infrastructure:**  
-  - **VirtualNode:** Each simulated node wraps a consensus algorithm and handles message queuing, processing, and heartbeat management.
-  - **MessageRouter:** A central messaging hub that decouples nodes from one another, allowing simulated message delays, logging, and routing.
-  - **Scheduler and Heartbeat Services:** Use configurable thread pools to schedule recurring tasks (e.g., heartbeats, consensus timeouts, and metrics updates).
+## Network Model
 
-- **Simulation Orchestration and Metrics:**  
-  - **Simulation Engine/Orchestrator:** Coordinates node initialization, simulation start/stop, failure injection, and real-time event logging.
-  - **Metrics Collection:** Aggregates performance metrics (latency, throughput, failure recovery) and pushes snapshots to a front-end dashboard via WebSockets.
+- **Real crash-stop failures.** A `FAILED` node is deaf and mute: it stops processing inbound messages and stops sending heartbeats immediately, and stays that way until explicitly recovered. `MessageRouter` also drops any message to or from a `FAILED` node (tracked via a `droppedMessageCount` metric) rather than delivering it.
+- **Configurable message loss and delay.** `MessageRouter` exposes a live-adjustable random loss rate and a delay range; both are settable at simulation start and updatable mid-run via `PUT /api/simulations/{id}/network-conditions` (the dashboard exposes these as sliders). Loss and delay are global probabilities applied to every message, not per node-pair — there's no way to model an asymmetric or partial network partition (e.g., "node A can't reach node B but everyone else can").
+- **Topology is visualization metadata, not enforcement.** Selecting RING/STAR/TREE/etc. produces a neighbor map the dashboard uses to draw the node graph, but it does **not** constrain message delivery — every consensus protocol here needs full connectivity for its quorum math, so a topology-constrained router would silently break all of them. Real multi-hop/gossip-style routing is explicitly out of scope (see Known Limitations).
 
-- **Deployment and Integration:**  
-  - **Database Integration:** Uses MongoDB for persisting simulation data, nodes, and topologies.
-  - **Containerization:** Provides Docker Compose and Kubernetes manifests to support local development and scalable cloud deployments.
-  - **Security:** Implements optional JWT-based authentication (configurable for development vs. production).
+## Dashboard
 
-## What is Not Fully Implemented
+A minimal React dashboard is wired to the backend's REST and WebSocket APIs:
+- **Node grid** — one card per node showing status and (Raft-only) role, polled from the live node-status endpoint.
+- **Live event log** — a STOMP/SockJS client subscribed to the simulation's WebSocket topics, appending `NODE_FAILED`, `NODE_RECOVERED`, `VALUE_PROPOSED`, and metrics events as they arrive.
+- **Controls** — start/stop a simulation, fail/recover a specific node, and propose a value.
+- **Network sliders** — debounced controls for the loss rate and delay range described above.
 
-While DSS simulates many core aspects of distributed systems, certain production-level features are simplified or left as potential enhancements:
+It's intentionally plain (fetch + basic CSS, no component library) — the goal is a real, demonstrable simulation, not a polished product.
 
-- **Dynamic Membership and Reconfiguration:**  
-  - The current design assumes a fixed set of nodes during a simulation run. Dynamic addition or removal of nodes is not supported.
+## Security
 
-- **Robust Network Partitioning and Recovery:**  
-  - Although node failures and heartbeat detection are simulated, advanced handling of network partitions or split-brain scenarios is not implemented.
+- Security is **enabled by default**. There is no insecure fallback in the shipped `application.properties` — production requires `JWT_SECRET` to be set and fails fast at startup otherwise.
+- The JWT filter (`JwtAuthenticationFilter`) is live in the Spring Security filter chain. `/api/nodes/**` requires `ROLE_ADMIN`; all other API endpoints require authentication. The only endpoints left public are `/ws/**` (the SockJS handshake has no authentication mechanism of its own) and `/actuator/health/**` (polled unauthenticated by container/Kubernetes health probes).
+- For local development or running the test suite, activate the `dev` Spring profile (`SPRING_PROFILES_ACTIVE=dev`) to get `app.security.disable=true` and a fallback JWT secret. Tests pick this up automatically; the `docker-compose.yml` stack also runs with `dev` active for zero-config local use. **Never use the `dev` profile in a real deployment.**
 
-- **Persistent Storage for Logs and State:**  
-  - The consensus algorithms maintain in-memory state for logs and proposals. Durable storage mechanisms (such as disk-based persistence) are abstracted away for simulation purposes.
+## Known Limitations
 
-- **Advanced Leader Election and Conflict Resolution:**  
-  - Leader election in protocols like Raft is demonstrated in a simplified manner without advanced randomization or tie-breaking strategies.
+These are deliberate scope decisions for this milestone, not bugs:
+
+- **Multi-Paxos has no leader-failure detection or re-election.** A backup node could reuse the existing per-node phi-accrual failure detector to trigger a new Prepare round, but that's future work.
+- **Zab has no leader election or epoch-based recovery; VSR has no view-change protocol.** Both remain happy-path-only demonstrations.
+- **Topology selection doesn't constrain routing.** It's visualization metadata only (see Network Model above). Multi-hop/gossip forwarding that would make topology actually matter is out of scope.
+- **No durable or persistent log/term storage.** Every protocol's state (logs, terms, proposal numbers) is in-memory only and resets on restart. This applies uniformly across all five algorithms.
+- **`GET /api/simulations/{id}/events` always returns 500.** Events are published to the WebSocket topic but are never persisted back onto the `Simulation` document, so this REST endpoint has nothing to read. The dashboard's event log consumes the WebSocket topic directly and never calls this endpoint, so the gap is dead code, not a blocking bug — but it should be fixed or removed rather than left as a 500.
+- **No self-serve way to obtain a JWT or authenticate as a new user.** There's no login or registration endpoint, and no `PasswordEncoder` bean is configured. Using HTTP Basic or JWT auth in production today requires manually inserting a `User` document into MongoDB with a properly encoded password — there's no operational path to provision one through the running application.
+- **Message loss/delay are global, not per-link.** There's no way to simulate an asymmetric network partition (some node pairs cut off, others fine) — only a uniform random chance applied to every message in the simulation.
+- **No dynamic membership.** The set of nodes in a simulation is fixed once it starts; nodes can fail and recover, but none can be added or removed mid-run.
 
 ## Project Structure
 
 The codebase is organized into several top-level directories:
 
-- **backend/**  
-  Contains the core Spring Boot application with packages for configuration, consensus algorithms, messaging, simulation engine, security, and REST controllers.
+- **backend/**
+  Spring Boot application with packages for configuration, consensus algorithms, messaging, simulation orchestration, security, and REST controllers.
 
-- **database/**  
-  Includes the MongoDB initialization script (`init.sql`).
+- **frontend/**
+  React dashboard (node grid, live event log, controls, network sliders) — plain fetch/axios + CSS, no component library.
 
-- **deployment/**  
-  Provides Docker Compose and Kubernetes YAML files for deploying the backend and its dependencies.
+- **deployment/**
+  Docker Compose (local dev, `dev` profile) and Kubernetes manifests (production-shaped: resource limits, liveness/readiness probes via Spring Actuator, secrets for Mongo URI and JWT secret) for running the backend and its dependencies.
 
-- **docs/**  
-  Contains detailed documentation on architecture, sequence diagrams, the simulation lifecycle, and additional design decisions:
+- **docs/**
+  Architecture, sequence diagrams, the simulation lifecycle, and additional design decisions:
   - [consensus-architecture.md](consensus-architecture.md)
   - [consensus-sequence-diagrams.md](consensus-sequence-diagrams.md)
   - [high-level-architecture.md](high-level-architecture.md)
   - [simulation-lifecycle.md](simulation-lifecycle.md)
   - [simulation-node-state.md](simulation-node-state.md)
 
-- **frontend/**  
-  (Not covered in this document)
+## Running Locally
 
-- **tests/**  
-  Comprehensive unit, integration, and performance tests to validate the functionality of each module.
+**Backend** (requires MongoDB running locally on `27017`):
+```bash
+cd backend
+SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run   # zero-config local/dev mode
+# or, for production-like behavior:
+JWT_SECRET=<your-secret> ./mvnw spring-boot:run
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+npm start   # proxies API calls to localhost:8080
+```
+
+**Full stack via Docker Compose:**
+```bash
+cd deployment
+docker-compose up
+```
 
 ## Conclusion
 
-The Distributed Systems Simulator provides a rich environment for studying how consensus protocols function within distributed systems. By abstracting node interactions through virtual nodes and a central message router, DSS makes it easier to understand the trade-offs, behaviors, and failure modes of key consensus algorithms. For a deeper dive into the design details, please refer to the documentation files in the docs folder.
-
----
-
-For additional details and architectural insights, see our documentation:
-- [Consensus Architecture](consensus-architecture.md)
-- [Sequence Diagrams](consensus-sequence-diagrams.md)
-- [High-Level Architecture](high-level-architecture.md)
-- [Simulation Lifecycle](simulation-lifecycle.md)
-- [Node and Simulation State](simulation-node-state.md)
+The Distributed Systems Simulator provides a real (if intentionally uneven) environment for studying how consensus protocols behave under node failure and network unreliability — not just on the happy path. Raft is implemented end-to-end, including crash-stop recovery; Paxos and Multi-Paxos are correct under crash-stop short of leader failure; Zab and VSR demonstrate their core protocols without recovery machinery. For deeper design detail, see the docs listed above.
