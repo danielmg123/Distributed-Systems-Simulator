@@ -1,3 +1,16 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-secrets
+type: Opaque
+stringData:
+  # Placeholder values for local cluster testing only. For a real deployment,
+  # create this Secret out-of-band instead (e.g. `kubectl create secret
+  # generic backend-secrets --from-literal=...`) and remove this manifest
+  # from what you `kubectl apply`.
+  mongodb-uri: "mongodb://admin:changeme@db:27017/dss?authSource=admin"
+  jwt-secret: "changeme"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,4 +32,31 @@ spec:
         - containerPort: 8080
         env:
         - name: SPRING_DATA_MONGODB_URI
-          value: mongodb://db:27017/dss
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: mongodb-uri
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: jwt-secret
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5

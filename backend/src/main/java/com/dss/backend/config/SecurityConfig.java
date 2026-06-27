@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * Configures Spring Security for the application.
@@ -57,15 +58,16 @@ public class SecurityConfig {
                     .authorizeHttpRequests(auth -> auth
                             // Admin role required for node mgmt
                             .requestMatchers("/api/nodes/**").hasRole("ADMIN")
-                            // Let some endpoints be public or require normal user auth
-                            .requestMatchers("/api/algorithms/**", "/api/simulations/**", "/api/topologies/**").permitAll()
+                            // Genuinely public infrastructure endpoints only:
+                            // the WebSocket/SockJS handshake has no auth handshake of
+                            // its own, and the health endpoint is polled unauthenticated
+                            // by container/k8s liveness & readiness probes.
+                            .requestMatchers("/ws/**", "/actuator/health/**").permitAll()
                             .anyRequest().authenticated()
                     )
                     // Example: using Basic auth
-                    .httpBasic(Customizer.withDefaults());
-
-            // If using JWT, place the JwtAuthenticationFilter in the chain:
-            // .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                    .httpBasic(Customizer.withDefaults())
+                    .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         }
         return http.build();
     }

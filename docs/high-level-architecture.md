@@ -114,8 +114,6 @@ Below is a simplified view of the code layout:
 │   └── pom.xml
 ├── frontend
 │   └── (React-based UI)
-├── database
-│   └── init.sql
 ├── deployment
 │   ├── docker-compose.yml
 │   └── kubernetes
