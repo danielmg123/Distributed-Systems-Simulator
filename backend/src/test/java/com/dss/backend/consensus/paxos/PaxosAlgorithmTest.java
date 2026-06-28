@@ -37,6 +37,12 @@ public class PaxosAlgorithmTest {
     }
 
     @Test
+    public void getRoleLabel_returnsAcceptor() {
+        // Basic Paxos is leaderless -- every node is an acceptor.
+        assertEquals("ACCEPTOR", paxos.getRoleLabel());
+    }
+
+    @Test
     public void propose_GeneratesProposalNumberAndBroadcastsPrepare() {
         // Call propose with a test value.
         paxos.propose("testValue");

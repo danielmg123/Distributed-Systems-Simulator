@@ -44,6 +44,16 @@ public class MultiPaxosAdditionalTests {
     }
 
     @Test
+    public void getRoleLabel_reflectsLeaderFlag() {
+        assertEquals("LEADER", leader.getRoleLabel());
+
+        MultiPaxos follower = new MultiPaxos("node2", Arrays.asList("node1", "node2", "node3"), router,
+                new SimulationProperties(), new DefaultScheduler(Executors.newSingleThreadScheduledExecutor()));
+        follower.setLeader(false);
+        assertEquals("FOLLOWER", follower.getRoleLabel());
+    }
+
+    @Test
     public void testConflictingProposals() throws InterruptedException {
         leader.propose("value1");
         int currentProposal = leader.getCurrentProposalNumber();

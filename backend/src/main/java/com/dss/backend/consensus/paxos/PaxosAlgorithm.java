@@ -190,6 +190,16 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
         return paxosState.getChosenValue();
     }
 
+    /**
+     * @return {@code "ACCEPTOR"} -- basic Paxos is leaderless, so every node plays the
+     *         same role. Returned (rather than {@code null}) so the dashboard labels these
+     *         nodes intentionally instead of leaving them blank.
+     */
+    @Override
+    public String getRoleLabel() {
+        return "ACCEPTOR";
+    }
+
     @Override
     public void setConsensusObserver(ConsensusObserver observer) {
         this.observer = (observer != null) ? observer : ConsensusObserver.NO_OP;

@@ -240,6 +240,27 @@ public class SimulationOrchestrator {
                 "Value proposed: " + value,
                 EventType.VALUE_PROPOSED
         );
+
+        // For a leader-based protocol with no active leader, the proposal is silently
+        // dropped (no node acts on it). Surface that instead of leaving the user to wonder
+        // why nothing committed. This is the normal state for Multi-Paxos after its leader
+        // fails (no re-election); for Raft it only happens in the brief window between a
+        // leader failing and a new one being elected.
+        boolean leaderBased = nodeMap.values().stream().anyMatch(vn -> isLeaderRole(vn.getRoleLabel()));
+        boolean hasActiveLeader = nodeMap.values().stream()
+                .anyMatch(vn -> vn.getNodeStatus() == NodeStatus.ACTIVE && "LEADER".equals(vn.getRoleLabel()));
+        if (leaderBased && !hasActiveLeader) {
+            eventLoggerService.logEvent(
+                    simulationId,
+                    "Proposal had no effect: no node is currently the leader.",
+                    EventType.SIMULATION_EVENT
+            );
+        }
+    }
+
+    /** @return true if the role label belongs to a leader-election protocol (Raft, Multi-Paxos). */
+    private static boolean isLeaderRole(String roleLabel) {
+        return "LEADER".equals(roleLabel) || "FOLLOWER".equals(roleLabel) || "CANDIDATE".equals(roleLabel);
     }
 
     /**

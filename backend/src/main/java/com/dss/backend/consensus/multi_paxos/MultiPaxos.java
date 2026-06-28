@@ -288,6 +288,17 @@ public class MultiPaxos implements ConsensusAlgorithm {
     }
 
     /**
+     * @return {@code "LEADER"} if this node is the Multi-Paxos leader, else
+     *         {@code "FOLLOWER"}. Makes the (otherwise invisible) leader visible in the
+     *         dashboard -- and explains why failing it stops progress, since Multi-Paxos
+     *         has no leader re-election.
+     */
+    @Override
+    public String getRoleLabel() {
+        return isLeader ? "LEADER" : "FOLLOWER";
+    }
+
+    /**
      * Processes incoming Paxos-related messages (PREPARE_REQUEST, PROMISE, ACCEPT_REQUEST, ACCEPTED, COMMIT).
      *
      * @param msg the incoming SimulationMessage
