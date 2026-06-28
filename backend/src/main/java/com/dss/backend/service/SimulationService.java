@@ -15,6 +15,7 @@ import com.dss.backend.model.*;
 import com.dss.backend.repository.SimulationRepository;
 import com.dss.backend.service.engine.*;
 import com.dss.backend.consensus.ConsensusAlgorithmFactory;
+import com.dss.backend.consensus.ConsensusObserver;
 import com.dss.backend.config.SimulationProperties;
 
 import org.springframework.stereotype.Service;
@@ -197,7 +198,10 @@ public class SimulationService {
             router.setMinDelayMs(config.getMinMessageDelayMs());
             router.setMaxDelayMs(config.getMaxMessageDelayMs());
         }
-        ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(router, scheduler, simulationProperties);
+        // Each algorithm reports a committed value through this observer so the shared
+        // collector counts one commit per cluster-agreed value.
+        ConsensusObserver observer = (nodeId, value) -> metricsCollector.recordCommit();
+        ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(router, scheduler, simulationProperties, observer);
         NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler, consensusFactory, simulationProperties);
         MetricsUpdateService metricsUpdateService = new MetricsUpdateService(metricsCollector, simulationWebSocketController, scheduler);
         EventLoggerService eventLoggerService = new EventLoggerService(simulationWebSocketController);
@@ -311,6 +315,7 @@ public class SimulationService {
     public void propose(String simulationId, Object value) {
         SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
         if (orchestrator != null) {
+            metricsCollector.recordProposal();
             orchestrator.propose(simulationId, value);
         }
     }

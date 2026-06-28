@@ -199,6 +199,34 @@ public class SimulationIntegrationTest {
         }
     }
 
+    @Test
+    public void metrics_recordMessagesProposalsAndCommits() throws Exception {
+        String id = createAndSaveRaftSimulation("Metrics Simulation");
+        simulationService.runSimulation(id);
+        try {
+            assertTrue(waitForLeader(id, 5000), "a leader must be elected before proposing");
+            simulationService.propose(id, "x=1");
+
+            // The shared collector accumulates across simulations, so assert >= 1 rather
+            // than == 1. The point is that these counters move at all (they were dead).
+            MetricsSnapshot snap = null;
+            boolean recorded = false;
+            long deadline = System.currentTimeMillis() + 5000;
+            while (System.currentTimeMillis() < deadline) {
+                snap = simulationService.getSimulationMetrics(id);
+                if (snap.getTotalProposals() >= 1 && snap.getTotalCommits() >= 1) {
+                    recorded = true;
+                    break;
+                }
+                Thread.sleep(50);
+            }
+            assertTrue(recorded, "expected a proposal and a commit to be recorded, got " + snap);
+            assertTrue(snap.getTotalMessages() > 0, "expected delivered messages to be counted, got " + snap);
+        } finally {
+            simulationService.stopSimulation(id);
+        }
+    }
+
     private String createAndSaveRaftSimulation(String name) {
         Simulation simulation = new Simulation();
         simulation.setId(UUID.randomUUID().toString());

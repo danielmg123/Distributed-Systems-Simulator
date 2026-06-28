@@ -88,4 +88,15 @@ public interface ConsensusAlgorithm {
     default String getRoleLabel() {
         return null;
     }
+
+    /**
+     * Registers an observer the algorithm notifies of notable moments (commits, leader
+     * elections), used by the simulation to record metrics and log events. Default no-op
+     * so algorithms that don't support it, and callers that don't supply one, work
+     * unchanged.
+     *
+     * @param observer the observer to notify
+     */
+    default void setConsensusObserver(ConsensusObserver observer) {
+    }
 }

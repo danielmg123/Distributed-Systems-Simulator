@@ -8,19 +8,14 @@ import lombok.Getter;
 @Getter
 public class MetricsSnapshot {
     private final long totalMessages;
-    private final long totalLatencyMillis;
     private final long totalProposals;
     private final long totalCommits;
-    private final long totalFailureRecoveryMillis;
     private final long totalDroppedMessages;
 
-    public MetricsSnapshot(long totalMessages, long totalLatencyMillis, long totalProposals, long totalCommits,
-                            long totalFailureRecoveryMillis, long totalDroppedMessages) {
+    public MetricsSnapshot(long totalMessages, long totalProposals, long totalCommits, long totalDroppedMessages) {
         this.totalMessages = totalMessages;
-        this.totalLatencyMillis = totalLatencyMillis;
         this.totalProposals = totalProposals;
         this.totalCommits = totalCommits;
-        this.totalFailureRecoveryMillis = totalFailureRecoveryMillis;
         this.totalDroppedMessages = totalDroppedMessages;
     }
 
@@ -28,10 +23,8 @@ public class MetricsSnapshot {
     public String toString() {
         return "MetricsSnapshot{" +
                 "totalMessages=" + totalMessages +
-                ", totalLatencyMillis=" + totalLatencyMillis +
                 ", totalProposals=" + totalProposals +
                 ", totalCommits=" + totalCommits +
-                ", totalFailureRecoveryMillis=" + totalFailureRecoveryMillis +
                 ", totalDroppedMessages=" + totalDroppedMessages +
                 '}';
     }

@@ -4,10 +4,14 @@ package com.dss.backend.metrics;
  * Interface for recording performance metrics.
  */
 public interface PerformanceMetricsCollector {
-    void recordMessageLatency(long latencyMillis);
+    /** Records that one message was delivered to its target node. */
+    void recordMessage();
+
+    /** Records that a client proposal was submitted to the cluster. */
     void recordProposal();
+
+    /** Records that the cluster committed/chose one value (counted once per agreed value). */
     void recordCommit();
-    void recordFailureRecoveryTime(long recoveryMillis);
 
     /**
      * Records that a message was dropped rather than delivered, e.g. because its

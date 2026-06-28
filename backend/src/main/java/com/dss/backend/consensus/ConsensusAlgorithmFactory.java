@@ -22,21 +22,36 @@ public class ConsensusAlgorithmFactory {
     private final MessageRouter router;
     private final Scheduler scheduler;
     private final SimulationProperties simulationProperties;
+    private final ConsensusObserver observer;
 
     /**
-     * Constructs a new factory with shared dependencies (MessageRouter, Scheduler, etc.)
-     * needed by all algorithms.
-     *
-     * @param router                the shared {@link MessageRouter} used for message sending
-     * @param scheduler             a shared {@link Scheduler} for scheduled tasks/timeouts
-     * @param simulationProperties  config properties that control aspects like timeouts, thread pools, etc.
+     * Constructs a factory whose algorithms report no metrics/events (observer is a no-op).
+     * Convenient for tests and standalone use.
      */
     public ConsensusAlgorithmFactory(MessageRouter router,
                                      Scheduler scheduler,
                                      SimulationProperties simulationProperties) {
+        this(router, scheduler, simulationProperties, ConsensusObserver.NO_OP);
+    }
+
+    /**
+     * Constructs a new factory with shared dependencies (MessageRouter, Scheduler, etc.)
+     * needed by all algorithms, plus an observer that every created algorithm is wired to
+     * so it can report commits (and, for Raft, leader elections) for metrics and events.
+     *
+     * @param router                the shared {@link MessageRouter} used for message sending
+     * @param scheduler             a shared {@link Scheduler} for scheduled tasks/timeouts
+     * @param simulationProperties  config properties that control aspects like timeouts, thread pools, etc.
+     * @param observer              notified of commits/leader-elections by every created algorithm
+     */
+    public ConsensusAlgorithmFactory(MessageRouter router,
+                                     Scheduler scheduler,
+                                     SimulationProperties simulationProperties,
+                                     ConsensusObserver observer) {
         this.router = router;
         this.scheduler = scheduler;
         this.simulationProperties = simulationProperties;
+        this.observer = (observer != null) ? observer : ConsensusObserver.NO_OP;
     }
 
     /**
@@ -62,23 +77,29 @@ public class ConsensusAlgorithmFactory {
                                               SimulationConfig config) {
         // Fallback to Paxos if config or algorithm type is null
         if (config == null || config.getAlgorithmType() == null) {
-            return new PaxosAlgorithm(nodeId, allNodeIds, router);
+            return withObserver(new PaxosAlgorithm(nodeId, allNodeIds, router));
         }
 
         switch (config.getAlgorithmType()) {
             case PAXOS:
-                return new PaxosAlgorithm(nodeId, allNodeIds, router);
+                return withObserver(new PaxosAlgorithm(nodeId, allNodeIds, router));
             case RAFT:
-                return new Raft(nodeId, allNodeIds, router, scheduler, simulationProperties);
+                return withObserver(new Raft(nodeId, allNodeIds, router, scheduler, simulationProperties));
             case MULTI_PAXOS:
                 MultiPaxos multiPaxos = new MultiPaxos(nodeId, allNodeIds, router, simulationProperties, scheduler);
                 multiPaxos.setTotalNodes(allNodeIds.size());
                 // For simplicity, pick the first node as leader
                 multiPaxos.setLeader(allNodeIds.get(0).equals(nodeId));
-                return multiPaxos;
+                return withObserver(multiPaxos);
             default:
                 // Unrecognized type
                 throw new IllegalArgumentException("Unsupported consensus algorithm: " + config.getAlgorithmType());
         }
+    }
+
+    /** Wires the factory's observer into a freshly-created algorithm and returns it. */
+    private ConsensusAlgorithm withObserver(ConsensusAlgorithm algorithm) {
+        algorithm.setConsensusObserver(observer);
+        return algorithm;
     }
 }

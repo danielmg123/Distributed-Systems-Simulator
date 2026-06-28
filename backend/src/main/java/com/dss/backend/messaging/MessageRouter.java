@@ -199,12 +199,16 @@ public class MessageRouter implements IMessageRouter {
             long delay = effectiveMinDelay + (long) (random.nextDouble() * (maxDelayMs - effectiveMinDelay));
             appLogger.debug("Delaying message from {} to {} (type {}) by {} ms",
                     message.getSourceNodeId(), message.getTargetNodeId(), message.getType(), delay);
-            scheduler.schedule(() -> targetNode.enqueueMessage(message), delay, TimeUnit.MILLISECONDS);
+            scheduler.schedule(() -> {
+                metricsCollector.recordMessage();
+                targetNode.enqueueMessage(message);
+            }, delay, TimeUnit.MILLISECONDS);
             return;
         }
 
         appLogger.debug("Routing message from {} to {} with type {}",
                 message.getSourceNodeId(), message.getTargetNodeId(), message.getType());
+        metricsCollector.recordMessage();
         targetNode.enqueueMessage(message);
     }
 

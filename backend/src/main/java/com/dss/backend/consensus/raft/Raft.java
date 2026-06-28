@@ -2,6 +2,7 @@ package com.dss.backend.consensus.raft;
 
 import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.consensus.AbstractConsensusAlgorithm;
+import com.dss.backend.consensus.ConsensusObserver;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.consensus.util.ConsensusUtils;
 import com.dss.backend.engine.Scheduler;
@@ -127,6 +128,9 @@ public class Raft extends AbstractConsensusAlgorithm {
     private final Map<Integer, Integer> votesReceivedPerTerm = new ConcurrentHashMap<>();
 
     private final ConsensusBroadcaster broadcaster;
+
+    // Notified when this node commits an entry or becomes leader; defaults to no-op.
+    private volatile ConsensusObserver observer = ConsensusObserver.NO_OP;
 
     // Used to schedule the randomized election timeout.
     private final Scheduler scheduler;
@@ -718,6 +722,7 @@ public class Raft extends AbstractConsensusAlgorithm {
                         && log.get(i).getTerm() == currentTerm) {
                     commitIndex = i;
                     applyEntries();
+                    observer.onCommitted(myNodeId, log.get(i).getCommand());
                     break;
                 }
             }
@@ -772,5 +777,10 @@ public class Raft extends AbstractConsensusAlgorithm {
     @Override
     public String getRoleLabel() {
         return role.name();
+    }
+
+    @Override
+    public void setConsensusObserver(ConsensusObserver observer) {
+        this.observer = (observer != null) ? observer : ConsensusObserver.NO_OP;
     }
 }

@@ -1,6 +1,7 @@
 package com.dss.backend.consensus.multi_paxos;
 
 import com.dss.backend.consensus.ConsensusAlgorithm;
+import com.dss.backend.consensus.ConsensusObserver;
 import com.dss.backend.consensus.paxos.PaxosMessagingUtil;
 import com.dss.backend.consensus.paxos.PaxosPayload;
 import com.dss.backend.consensus.paxos.ProposerState;
@@ -62,6 +63,9 @@ public class MultiPaxos implements ConsensusAlgorithm {
 
     private final MessageRouter router;
     private final ConsensusBroadcaster broadcaster;
+
+    /** Notified when this leader commits a value; defaults to no-op. */
+    private volatile ConsensusObserver observer = ConsensusObserver.NO_OP;
 
     /** The total number of nodes in the cluster. */
     private int totalNodes = 1;
@@ -278,6 +282,11 @@ public class MultiPaxos implements ConsensusAlgorithm {
         broadcastCommit(currentProposalNumber, value);
     }
 
+    @Override
+    public void setConsensusObserver(ConsensusObserver observer) {
+        this.observer = (observer != null) ? observer : ConsensusObserver.NO_OP;
+    }
+
     /**
      * Processes incoming Paxos-related messages (PREPARE_REQUEST, PROMISE, ACCEPT_REQUEST, ACCEPTED, COMMIT).
      *
@@ -484,6 +493,7 @@ public class MultiPaxos implements ConsensusAlgorithm {
             appLogger.info("Quorum reached on ACCEPTED responses for proposal #{}. Committing value: {}",
                     proposalNumber, valueToCommit);
             commit(valueToCommit);
+            observer.onCommitted(localNodeId, valueToCommit);
         }
     }
 

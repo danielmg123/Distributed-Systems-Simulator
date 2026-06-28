@@ -7,16 +7,13 @@ import java.util.concurrent.atomic.LongAdder;
  */
 public class DefaultMetricsCollector implements PerformanceMetricsCollector {
     private final LongAdder messageCount = new LongAdder();
-    private final LongAdder totalLatency = new LongAdder();
     private final LongAdder proposalCount = new LongAdder();
     private final LongAdder commitCount = new LongAdder();
-    private final LongAdder failureRecoveryTime = new LongAdder();
     private final LongAdder droppedMessageCount = new LongAdder();
 
     @Override
-    public void recordMessageLatency(long latencyMillis) {
+    public void recordMessage() {
         messageCount.increment();
-        totalLatency.add(latencyMillis);
     }
 
     @Override
@@ -30,11 +27,6 @@ public class DefaultMetricsCollector implements PerformanceMetricsCollector {
     }
 
     @Override
-    public void recordFailureRecoveryTime(long recoveryMillis) {
-        failureRecoveryTime.add(recoveryMillis);
-    }
-
-    @Override
     public void recordDroppedMessage() {
         droppedMessageCount.increment();
     }
@@ -43,10 +35,8 @@ public class DefaultMetricsCollector implements PerformanceMetricsCollector {
     public MetricsSnapshot getSnapshot() {
         return new MetricsSnapshot(
                 messageCount.sum(),
-                totalLatency.sum(),
                 proposalCount.sum(),
                 commitCount.sum(),
-                failureRecoveryTime.sum(),
                 droppedMessageCount.sum()
         );
     }

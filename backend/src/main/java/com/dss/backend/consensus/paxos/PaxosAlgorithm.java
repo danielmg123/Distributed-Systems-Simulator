@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.dss.backend.consensus.AbstractConsensusAlgorithm;
+import com.dss.backend.consensus.ConsensusObserver;
 import com.dss.backend.consensus.util.ConsensusBroadcaster;
 import com.dss.backend.consensus.util.ConsensusUtils;
 import com.dss.backend.messaging.*;
@@ -77,6 +78,9 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
 
     /** Helper object to broadcast messages to all nodes except self. */
     private final ConsensusBroadcaster broadcaster;
+
+    /** Notified when this proposer chooses a value; defaults to no-op. */
+    private volatile ConsensusObserver observer = ConsensusObserver.NO_OP;
 
     /** An atomic counter to generate unique proposal numbers. */
     private final AtomicInteger proposalCounter = new AtomicInteger(0);
@@ -179,6 +183,11 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
      */
     public Object getChosenValue() {
         return paxosState.getChosenValue();
+    }
+
+    @Override
+    public void setConsensusObserver(ConsensusObserver observer) {
+        this.observer = (observer != null) ? observer : ConsensusObserver.NO_OP;
     }
 
     /**
@@ -413,6 +422,7 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
         // If we've reached the majority threshold, commit the value.
         if (newCount >= majority) {
             commit(payload.getProposedValue());
+            observer.onCommitted(myNodeId, payload.getProposedValue());
 
             // Without this, only the proposer ever learns the chosen value -- the
             // acceptors that voted ACCEPTED never find out their proposal was chosen.
