@@ -83,7 +83,7 @@ export default function SimulationSetup({ onSimulationStarted }) {
         </select>
       </label>
       <label>
-        Topology (visualization only -- doesn't constrain routing)
+        Topology (shapes the graph view; doesn't constrain message routing)
         <select value={topologyType} onChange={(e) => setTopologyType(e.target.value)}>
           {TOPOLOGY_TYPES.map((t) => (
             <option key={t} value={t}>

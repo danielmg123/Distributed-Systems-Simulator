@@ -39,12 +39,14 @@ For Paxos and Multi-Paxos, a recovered crashed node simply rejoins and participa
 ## Dashboard
 
 A minimal React dashboard is wired to the backend's REST and WebSocket APIs:
-- **Node grid** — one card per node showing status and (Raft-only) role, polled from the live node-status endpoint.
-- **Live event log** — a STOMP/SockJS client subscribed to the simulation's WebSocket topics, appending `NODE_FAILED`, `NODE_RECOVERED`, `VALUE_PROPOSED`, and metrics events as they arrive.
+- **Node grid** — one card per node showing live status, protocol role (Raft `LEADER`/`FOLLOWER`/`CANDIDATE`, Multi-Paxos `LEADER`/`FOLLOWER`, Paxos `ACCEPTOR`), the value that node has committed, and a protocol-specific state line (e.g. Raft's `term N · committed K/M`), polled from the live node-status endpoint.
+- **Topology graph** — an SVG node graph drawn from the simulation's adjacency map (`MESH`/`RING`/`STAR`/`TREE`), colored live from the same node-status poll so a node turns red the instant it fails and the leader is highlighted as leadership moves. (Topology is a visualization of the chosen layout; it does not constrain message routing — see Network Model.)
+- **Live event log** — a STOMP/SockJS client subscribed to the simulation's WebSocket topics, showing the run as a narrative: `LEADER_ELECTED`, `VALUE_PROPOSED`, `VALUE_COMMITTED`, `NODE_FAILED`, `NODE_RECOVERED`.
+- **Metrics panel** — live counts of messages delivered, proposals, commits (one per cluster-agreed value), and dropped messages.
 - **Controls** — start/stop a simulation, fail/recover a specific node, and propose a value.
 - **Network sliders** — debounced controls for the loss rate and delay range described above.
 
-It's intentionally plain (fetch + basic CSS, no component library) — the goal is a real, demonstrable simulation, not a polished product.
+It's intentionally plain (fetch + basic CSS + inline SVG, no component library) — the goal is a real, demonstrable simulation, not a polished product.
 
 ## Security
 

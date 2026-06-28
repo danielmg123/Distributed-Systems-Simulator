@@ -3,6 +3,7 @@ import { api } from "./api";
 import { useSimulationSocket } from "./useSimulationSocket";
 import SimulationSetup from "./components/SimulationSetup";
 import NodeGrid from "./components/NodeGrid";
+import TopologyGraph from "./components/TopologyGraph";
 import EventLog from "./components/EventLog";
 import Controls from "./components/Controls";
 import NetworkSliders from "./components/NetworkSliders";
@@ -14,6 +15,7 @@ const NODE_POLL_MS = 1000;
 function App() {
   const [simulationId, setSimulationId] = useState(null);
   const [nodes, setNodes] = useState([]);
+  const [topology, setTopology] = useState({});
   const [error, setError] = useState(null);
   const { metrics, events } = useSimulationSocket(simulationId);
 
@@ -38,6 +40,23 @@ function App() {
     return () => {
       cancelled = true;
       clearInterval(interval);
+    };
+  }, [simulationId]);
+
+  // The topology adjacency map is fixed for a run, so fetch it once. Node colors update
+  // live via the node-status poll above.
+  useEffect(() => {
+    if (!simulationId) {
+      setTopology({});
+      return;
+    }
+    let cancelled = false;
+    api
+      .getTopology(simulationId)
+      .then((result) => !cancelled && setTopology(result || {}))
+      .catch((err) => !cancelled && setError(err.message));
+    return () => {
+      cancelled = true;
     };
   }, [simulationId]);
 
@@ -82,6 +101,7 @@ function App() {
             Simulation: <code>{simulationId}</code>
           </p>
           <NodeGrid nodes={nodes} onFailNode={handleFailNode} onRecoverNode={handleRecoverNode} />
+          <TopologyGraph nodes={nodes} topology={topology} />
           <div className="dashboard__row">
             <Controls onPropose={handlePropose} onStop={handleStop} />
             <NetworkSliders onChange={handleNetworkConditionsChange} />
