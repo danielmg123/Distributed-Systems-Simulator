@@ -111,6 +111,7 @@ public class Raft extends AbstractConsensusAlgorithm {
     // uncommitted.
     private volatile int commitIndex = -1;   // Index of highest log entry known to be committed (-1 = none)
     private volatile int lastApplied = 0;    // Index of the next log entry to apply to the state machine
+    private volatile Object lastAppliedValue; // Command of the most recently applied entry (for display)
 
     // ----------------------------------------------------
     // Volatile State on Leaders (Reinitialized after election)
@@ -651,6 +652,7 @@ public class Raft extends AbstractConsensusAlgorithm {
         while (lastApplied < commitIndex + 1) {
             LogEntry entry = log.get(lastApplied);
             lastApplied++;
+            lastAppliedValue = entry.getCommand();
             commit(entry.getCommand());
         }
     }
@@ -782,5 +784,23 @@ public class Raft extends AbstractConsensusAlgorithm {
     @Override
     public void setConsensusObserver(ConsensusObserver observer) {
         this.observer = (observer != null) ? observer : ConsensusObserver.NO_OP;
+    }
+
+    /**
+     * @return the command of the most recently applied (committed) log entry, or
+     *         {@code null} if this node hasn't applied anything yet.
+     */
+    @Override
+    public Object getCommittedValue() {
+        return lastAppliedValue;
+    }
+
+    /**
+     * @return a summary like {@code "term 2 · committed 1/3"}: current term, number of
+     *         committed entries, and total log length.
+     */
+    @Override
+    public String getStateSummary() {
+        return "term " + currentTerm + " · committed " + (commitIndex + 1) + "/" + log.size();
     }
 }

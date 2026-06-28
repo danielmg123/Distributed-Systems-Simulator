@@ -227,6 +227,22 @@ public class VirtualNode {
     }
 
     /**
+     * @return the value this node's algorithm currently considers committed/chosen, or
+     *         {@code null} if none yet. For dashboard display.
+     */
+    public Object getCommittedValue() {
+        return algorithm.getCommittedValue();
+    }
+
+    /**
+     * @return a short protocol-specific summary of this node's consensus state (e.g.
+     *         Raft's term/committed count), or {@code null} if the protocol has none.
+     */
+    public String getStateSummary() {
+        return algorithm.getStateSummary();
+    }
+
+    /**
      * Submits a proposal to this node's consensus algorithm. For leader-based protocols
      * (Raft, Multi-Paxos), the algorithm itself ignores this unless the node is currently
      * the leader -- callers don't need to know which node that is.

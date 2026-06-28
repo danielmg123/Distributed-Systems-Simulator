@@ -227,6 +227,35 @@ public class SimulationIntegrationTest {
         }
     }
 
+    @Test
+    public void nodeStatuses_exposeCommittedValueAndDetailAfterCommit() throws Exception {
+        String id = createAndSaveRaftSimulation("Committed Value Simulation");
+        simulationService.runSimulation(id);
+        try {
+            assertTrue(waitForLeader(id, 5000), "a leader must be elected before proposing");
+            simulationService.propose(id, "x=1");
+
+            // The leader commits the single entry deterministically; assert its node
+            // status carries the committed value, and that Raft nodes report a detail
+            // summary (term/committed count).
+            boolean found = false;
+            long deadline = System.currentTimeMillis() + 5000;
+            while (System.currentTimeMillis() < deadline) {
+                List<NodeDTO> statuses = simulationService.getNodeStatuses(id);
+                boolean committedShown = statuses.stream().anyMatch(n -> "x=1".equals(n.getCommittedValue()));
+                boolean detailShown = statuses.stream().allMatch(n -> n.getDetail() != null && n.getDetail().startsWith("term"));
+                if (committedShown && detailShown) {
+                    found = true;
+                    break;
+                }
+                Thread.sleep(50);
+            }
+            assertTrue(found, "expected the committed value and Raft state detail to surface in node statuses");
+        } finally {
+            simulationService.stopSimulation(id);
+        }
+    }
+
     private String createAndSaveRaftSimulation(String name) {
         Simulation simulation = new Simulation();
         simulation.setId(UUID.randomUUID().toString());

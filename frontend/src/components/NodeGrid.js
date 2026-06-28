@@ -12,6 +12,10 @@ export default function NodeGrid({ nodes, onFailNode, onRecoverNode }) {
           <div className="node-card__id">{node.id}</div>
           <div className="node-card__status">{node.status}</div>
           {node.roleLabel && <div className="node-card__role">{node.roleLabel}</div>}
+          {node.committedValue != null && (
+            <div className="node-card__committed">committed: {node.committedValue}</div>
+          )}
+          {node.detail && <div className="node-card__detail">{node.detail}</div>}
           <div className="node-card__actions">
             {node.status === "FAILED" ? (
               <button onClick={() => onRecoverNode(node.id)}>Recover</button>

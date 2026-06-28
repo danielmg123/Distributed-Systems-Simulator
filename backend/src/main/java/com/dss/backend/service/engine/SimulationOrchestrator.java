@@ -261,6 +261,9 @@ public class SimulationOrchestrator {
             dto.setId(vNode.getNodeId());
             dto.setStatus(vNode.getNodeStatus().name());
             dto.setRoleLabel(vNode.getRoleLabel());
+            Object committed = vNode.getCommittedValue();
+            dto.setCommittedValue(committed == null ? null : String.valueOf(committed));
+            dto.setDetail(vNode.getStateSummary());
             statuses.add(dto);
         }
         return statuses;

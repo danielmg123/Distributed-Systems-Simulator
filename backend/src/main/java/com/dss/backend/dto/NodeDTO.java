@@ -20,4 +20,13 @@ public class NodeDTO {
             "null for protocols with no such concept. Only meaningful for a node in a running " +
             "simulation, not for the static node pool.", example = "LEADER")
     private String roleLabel;
+
+    @Schema(description = "The value this node currently considers committed/chosen, or null if none " +
+            "yet. A follower may be null while the leader/proposer already shows the agreed value.",
+            example = "x=1")
+    private String committedValue;
+
+    @Schema(description = "Short protocol-specific summary of this node's consensus state (e.g. Raft's " +
+            "term and committed count), or null if the protocol has none.", example = "term 2 · committed 1/1")
+    private String detail;
 }

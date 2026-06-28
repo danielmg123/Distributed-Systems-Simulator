@@ -186,6 +186,11 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
     }
 
     @Override
+    public Object getCommittedValue() {
+        return paxosState.getChosenValue();
+    }
+
+    @Override
     public void setConsensusObserver(ConsensusObserver observer) {
         this.observer = (observer != null) ? observer : ConsensusObserver.NO_OP;
     }

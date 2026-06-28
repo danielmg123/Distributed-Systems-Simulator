@@ -99,4 +99,27 @@ public interface ConsensusAlgorithm {
      */
     default void setConsensusObserver(ConsensusObserver observer) {
     }
+
+    /**
+     * Returns the value this node currently considers committed/chosen, for display in a
+     * dashboard, or {@code null} if it hasn't committed anything yet. This is the node's
+     * own view, so a follower may still be {@code null} while the leader/proposer already
+     * shows the agreed value.
+     *
+     * @return the committed value, or {@code null}
+     */
+    default Object getCommittedValue() {
+        return null;
+    }
+
+    /**
+     * Returns a short, protocol-specific summary of this node's consensus state for a
+     * dashboard (e.g. Raft's term and committed count), or {@code null} if the protocol
+     * has nothing extra worth showing.
+     *
+     * @return a state summary string, or {@code null}
+     */
+    default String getStateSummary() {
+        return null;
+    }
 }
