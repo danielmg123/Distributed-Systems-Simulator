@@ -198,13 +198,28 @@ public class SimulationService {
             router.setMinDelayMs(config.getMinMessageDelayMs());
             router.setMaxDelayMs(config.getMaxMessageDelayMs());
         }
-        // Each algorithm reports a committed value through this observer so the shared
-        // collector counts one commit per cluster-agreed value.
-        ConsensusObserver observer = (nodeId, value) -> metricsCollector.recordCommit();
+        EventLoggerService eventLoggerService = new EventLoggerService(simulationWebSocketController);
+        // Each algorithm reports notable moments through this observer: a commit (counted
+        // once per cluster-agreed value, and logged to the event feed) and, for Raft, a
+        // leader election. This is what surfaces "node3 became leader" / "x=1 committed"
+        // in the dashboard's event log.
+        ConsensusObserver observer = new ConsensusObserver() {
+            @Override
+            public void onCommitted(String nodeId, Object value) {
+                metricsCollector.recordCommit();
+                eventLoggerService.logEvent(simulationId,
+                        "Node " + nodeId + " committed value: " + value, EventType.VALUE_COMMITTED);
+            }
+
+            @Override
+            public void onLeaderElected(String nodeId, int term) {
+                eventLoggerService.logEvent(simulationId,
+                        "Node " + nodeId + " became leader (term " + term + ")", EventType.LEADER_ELECTED);
+            }
+        };
         ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(router, scheduler, simulationProperties, observer);
         NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler, consensusFactory, simulationProperties);
         MetricsUpdateService metricsUpdateService = new MetricsUpdateService(metricsCollector, simulationWebSocketController, scheduler);
-        EventLoggerService eventLoggerService = new EventLoggerService(simulationWebSocketController);
 
         SimulationOrchestrator orchestrator = new SimulationOrchestrator(
                 router,

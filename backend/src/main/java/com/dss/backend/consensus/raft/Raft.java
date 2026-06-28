@@ -500,6 +500,7 @@ public class Raft extends AbstractConsensusAlgorithm {
     private void becomeLeader() {
         role = Role.LEADER;
         appLogger.info("{} is now LEADER in term {}", myNodeId, currentTerm);
+        observer.onLeaderElected(myNodeId, currentTerm);
 
         int lastLogIndex = log.size() - 1;
         for (String nodeId : allNodeIds) {

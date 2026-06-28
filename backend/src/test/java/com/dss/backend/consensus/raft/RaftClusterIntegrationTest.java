@@ -1,6 +1,7 @@
 package com.dss.backend.consensus.raft;
 
 import com.dss.backend.config.SimulationProperties;
+import com.dss.backend.consensus.ConsensusObserver;
 import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.messaging.MessageRouter;
@@ -12,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -196,6 +199,63 @@ public class RaftClusterIntegrationTest {
                     "no new election should occur while the leader is healthy (term must not advance)");
             long leaderCount = algorithms.stream().filter(r -> r.getRole() == Raft.Role.LEADER).count();
             assertEquals(1, leaderCount, "there should still be exactly one leader");
+        } finally {
+            virtualNodes.forEach(VirtualNode::stop);
+            scheduler.shutdown();
+        }
+    }
+
+    /**
+     * The algorithm must notify its {@link ConsensusObserver} of leader elections and
+     * commits -- this is what the simulation turns into "leader elected" / "value
+     * committed" entries in the dashboard event log.
+     */
+    @Test
+    public void electionAndCommit_NotifyTheObserver() throws Exception {
+        MessageRouter router = new MessageRouter();
+        Scheduler scheduler = new DefaultScheduler(Executors.newScheduledThreadPool(NODE_COUNT * 2));
+        SimulationProperties props = new SimulationProperties();
+        List<String> nodeIds = new ArrayList<>();
+        for (int i = 1; i <= NODE_COUNT; i++) {
+            nodeIds.add("node" + i);
+        }
+
+        AtomicInteger leaderElections = new AtomicInteger();
+        AtomicInteger commits = new AtomicInteger();
+        AtomicReference<Object> lastCommitted = new AtomicReference<>();
+        ConsensusObserver observer = new ConsensusObserver() {
+            @Override
+            public void onCommitted(String nodeId, Object value) {
+                commits.incrementAndGet();
+                lastCommitted.set(value);
+            }
+
+            @Override
+            public void onLeaderElected(String nodeId, int term) {
+                leaderElections.incrementAndGet();
+            }
+        };
+
+        List<Raft> algorithms = new ArrayList<>();
+        List<VirtualNode> virtualNodes = new ArrayList<>();
+        for (String nodeId : nodeIds) {
+            Raft raft = new Raft(nodeId, nodeIds, router, scheduler, props);
+            raft.setConsensusObserver(observer); // before start(), so the first election is observed
+            algorithms.add(raft);
+            virtualNodes.add(startVirtualNode(nodeId, raft, router, scheduler));
+        }
+
+        try {
+            Raft leader = waitForSingleLeader(algorithms, 2000, "initial cluster boot");
+            assertTrue(leaderElections.get() >= 1, "observer should be notified of a leader election");
+
+            leader.propose("v1");
+            long deadline = System.currentTimeMillis() + 2000;
+            while (System.currentTimeMillis() < deadline && commits.get() < 1) {
+                Thread.sleep(20);
+            }
+            assertTrue(commits.get() >= 1, "observer should be notified of the committed value");
+            assertEquals("v1", lastCommitted.get(), "the committed value should be reported to the observer");
         } finally {
             virtualNodes.forEach(VirtualNode::stop);
             scheduler.shutdown();
