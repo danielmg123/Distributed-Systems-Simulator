@@ -1,9 +1,10 @@
-# --- Build stage: produce the static production bundle ---
-FROM node:18-alpine AS build
+# --- Build stage: produce the static production bundle with Vite ---
+FROM node:22-alpine AS build
 WORKDIR /usr/src/app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+# Vite is configured to emit into build/ (see vite.config.js), matching the copy below.
 RUN npm run build
 
 # --- Run stage: serve the bundle with nginx and proxy API/WebSocket calls to the backend ---

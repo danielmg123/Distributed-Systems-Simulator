@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="Distributed Systems Simulator dashboard" />
+    <link rel="apple-touch-icon" href="/logo192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Distributed Systems Simulator</title>
+    <!-- sockjs-client is a CommonJS module that references the Node `global`, which
+         Create React App's webpack used to polyfill. Vite doesn't, so alias it to the
+         window here before any module loads, or SockJS throws "global is not defined". -->
+    <script>
+      window.global = window;
+    </script>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
