@@ -247,6 +247,12 @@ public class RaftClusterIntegrationTest {
 
         try {
             Raft leader = waitForSingleLeader(algorithms, 2000, "initial cluster boot");
+            // onLeaderElected fires on the node thread just after the role flips to LEADER,
+            // so poll briefly rather than asserting the instant we observe the role.
+            long electionDeadline = System.currentTimeMillis() + 1000;
+            while (System.currentTimeMillis() < electionDeadline && leaderElections.get() < 1) {
+                Thread.sleep(20);
+            }
             assertTrue(leaderElections.get() >= 1, "observer should be notified of a leader election");
 
             leader.propose("v1");

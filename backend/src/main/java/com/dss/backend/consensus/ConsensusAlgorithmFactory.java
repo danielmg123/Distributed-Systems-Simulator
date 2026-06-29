@@ -23,35 +23,47 @@ public class ConsensusAlgorithmFactory {
     private final Scheduler scheduler;
     private final SimulationProperties simulationProperties;
     private final ConsensusObserver observer;
+    private final long raftElectionTimeoutMinMillis;
+    private final long raftElectionTimeoutMaxMillis;
 
     /**
-     * Constructs a factory whose algorithms report no metrics/events (observer is a no-op).
+     * Constructs a factory whose algorithms report no metrics/events (observer is a no-op)
+     * and whose Raft uses the default election-timeout range from {@code simulationProperties}.
      * Convenient for tests and standalone use.
      */
     public ConsensusAlgorithmFactory(MessageRouter router,
                                      Scheduler scheduler,
                                      SimulationProperties simulationProperties) {
-        this(router, scheduler, simulationProperties, ConsensusObserver.NO_OP);
+        this(router, scheduler, simulationProperties, ConsensusObserver.NO_OP,
+                simulationProperties.getRaftElectionTimeoutMinMillis(),
+                simulationProperties.getRaftElectionTimeoutMaxMillis());
     }
 
     /**
      * Constructs a new factory with shared dependencies (MessageRouter, Scheduler, etc.)
-     * needed by all algorithms, plus an observer that every created algorithm is wired to
-     * so it can report commits (and, for Raft, leader elections) for metrics and events.
+     * needed by all algorithms, an observer that every created algorithm is wired to so it
+     * can report commits (and, for Raft, leader elections), and the Raft election-timeout
+     * range to use (scaled by the simulation to tolerate the configured network delay).
      *
-     * @param router                the shared {@link MessageRouter} used for message sending
-     * @param scheduler             a shared {@link Scheduler} for scheduled tasks/timeouts
-     * @param simulationProperties  config properties that control aspects like timeouts, thread pools, etc.
-     * @param observer              notified of commits/leader-elections by every created algorithm
+     * @param router                    the shared {@link MessageRouter} used for message sending
+     * @param scheduler                 a shared {@link Scheduler} for scheduled tasks/timeouts
+     * @param simulationProperties      config properties that control timeouts, thread pools, etc.
+     * @param observer                  notified of commits/leader-elections by every created algorithm
+     * @param raftElectionTimeoutMinMillis minimum randomized Raft election timeout
+     * @param raftElectionTimeoutMaxMillis maximum randomized Raft election timeout
      */
     public ConsensusAlgorithmFactory(MessageRouter router,
                                      Scheduler scheduler,
                                      SimulationProperties simulationProperties,
-                                     ConsensusObserver observer) {
+                                     ConsensusObserver observer,
+                                     long raftElectionTimeoutMinMillis,
+                                     long raftElectionTimeoutMaxMillis) {
         this.router = router;
         this.scheduler = scheduler;
         this.simulationProperties = simulationProperties;
         this.observer = (observer != null) ? observer : ConsensusObserver.NO_OP;
+        this.raftElectionTimeoutMinMillis = raftElectionTimeoutMinMillis;
+        this.raftElectionTimeoutMaxMillis = raftElectionTimeoutMaxMillis;
     }
 
     /**
@@ -84,7 +96,8 @@ public class ConsensusAlgorithmFactory {
             case PAXOS:
                 return withObserver(new PaxosAlgorithm(nodeId, allNodeIds, router));
             case RAFT:
-                return withObserver(new Raft(nodeId, allNodeIds, router, scheduler, simulationProperties));
+                return withObserver(new Raft(nodeId, allNodeIds, router, scheduler, simulationProperties,
+                        raftElectionTimeoutMinMillis, raftElectionTimeoutMaxMillis));
             case MULTI_PAXOS:
                 MultiPaxos multiPaxos = new MultiPaxos(nodeId, allNodeIds, router, simulationProperties, scheduler);
                 multiPaxos.setTotalNodes(allNodeIds.size());

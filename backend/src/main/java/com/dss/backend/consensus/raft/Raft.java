@@ -162,13 +162,32 @@ public class Raft extends AbstractConsensusAlgorithm {
      */
     public Raft(String nodeId, List<String> allNodeIds, MessageRouter router,
                 Scheduler scheduler, SimulationProperties simulationProperties) {
+        this(nodeId, allNodeIds, router, scheduler, simulationProperties,
+                simulationProperties.getRaftElectionTimeoutMinMillis(),
+                simulationProperties.getRaftElectionTimeoutMaxMillis());
+    }
+
+    /**
+     * Constructor variant that takes the election-timeout range explicitly rather than
+     * reading it from {@code simulationProperties}. The simulation uses this to scale the
+     * timeout up with the configured network delay: with the default 150-300ms range a
+     * leader's heartbeats can arrive later than a follower's timeout once delivery delay
+     * approaches ~150ms, which causes endless re-elections. (Heartbeat interval is still
+     * taken from {@code simulationProperties}.)
+     *
+     * @param electionTimeoutMinMillis minimum randomized election timeout
+     * @param electionTimeoutMaxMillis maximum randomized election timeout
+     */
+    public Raft(String nodeId, List<String> allNodeIds, MessageRouter router,
+                Scheduler scheduler, SimulationProperties simulationProperties,
+                long electionTimeoutMinMillis, long electionTimeoutMaxMillis) {
         this.myNodeId = nodeId;
         this.allNodeIds = allNodeIds;
         this.router = router;
         this.broadcaster = new ConsensusBroadcaster(router, myNodeId);
         this.scheduler = scheduler;
-        this.electionTimeoutMinMillis = simulationProperties.getRaftElectionTimeoutMinMillis();
-        this.electionTimeoutMaxMillis = simulationProperties.getRaftElectionTimeoutMaxMillis();
+        this.electionTimeoutMinMillis = electionTimeoutMinMillis;
+        this.electionTimeoutMaxMillis = electionTimeoutMaxMillis;
         this.heartbeatIntervalMillis = simulationProperties.getRaftHeartbeatIntervalMillis();
     }
 

@@ -217,7 +217,16 @@ public class SimulationService {
                         "Node " + nodeId + " became leader (term " + term + ")", EventType.LEADER_ELECTED);
             }
         };
-        ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(router, scheduler, simulationProperties, observer);
+        // Scale Raft's election timeout up with the configured network delay. With the
+        // default 150-300ms range, once delivery delay approaches ~150ms a leader's
+        // heartbeats can land after a follower's timeout, triggering endless re-elections.
+        // Keeping the timeout comfortably above the max delay (and never below the
+        // configured floor) lets a healthy leader hold the role.
+        long maxDelayMs = (config != null) ? config.getMaxMessageDelayMs() : 0;
+        long electionTimeoutMin = Math.max(simulationProperties.getRaftElectionTimeoutMinMillis(), 3 * maxDelayMs);
+        long electionTimeoutMax = Math.max(simulationProperties.getRaftElectionTimeoutMaxMillis(), 6 * maxDelayMs);
+        ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(
+                router, scheduler, simulationProperties, observer, electionTimeoutMin, electionTimeoutMax);
         NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler, consensusFactory, simulationProperties);
         MetricsUpdateService metricsUpdateService = new MetricsUpdateService(metricsCollector, simulationWebSocketController, scheduler);
 
