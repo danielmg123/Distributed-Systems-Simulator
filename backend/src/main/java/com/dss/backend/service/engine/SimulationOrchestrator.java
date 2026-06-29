@@ -130,8 +130,19 @@ public class SimulationOrchestrator {
      * @param messageLossRate probability (0.0-1.0) that a message is randomly dropped
      * @param minDelayMs      minimum simulated delivery delay, in milliseconds
      * @param maxDelayMs      maximum simulated delivery delay, in milliseconds (0 disables delay)
+     * @param electionTimeoutMinMillis minimum Raft election timeout, scaled to the new delay
+     * @param electionTimeoutMaxMillis maximum Raft election timeout, scaled to the new delay
      */
-    public void setNetworkConditions(double messageLossRate, long minDelayMs, long maxDelayMs) {
+    public void setNetworkConditions(double messageLossRate, long minDelayMs, long maxDelayMs,
+                                     long electionTimeoutMinMillis, long electionTimeoutMaxMillis) {
+        // Rescale leader-election timeouts BEFORE raising the delay, so the new (larger)
+        // delay can never momentarily exceed a stale (smaller) timeout and kick off the
+        // election churn that would otherwise deadlock Raft once delay passes ~150ms.
+        if (nodeMap != null) {
+            for (VirtualNode vNode : nodeMap.values()) {
+                vNode.setElectionTimeoutRange(electionTimeoutMinMillis, electionTimeoutMaxMillis);
+            }
+        }
         messageRouter.setMessageLossRate(messageLossRate);
         messageRouter.setMinDelayMs(minDelayMs);
         messageRouter.setMaxDelayMs(maxDelayMs);

@@ -133,10 +133,13 @@ public class Raft extends AbstractConsensusAlgorithm {
     // Notified when this node commits an entry or becomes leader; defaults to no-op.
     private volatile ConsensusObserver observer = ConsensusObserver.NO_OP;
 
-    // Used to schedule the randomized election timeout.
+    // Used to schedule the randomized election timeout. The min/max are volatile rather
+    // than final because the simulation can rescale them at runtime (see
+    // setElectionTimeoutRange) when the configured network delay changes; resetElectionTimer
+    // re-reads them on its next reschedule, so a larger range takes effect within one cycle.
     private final Scheduler scheduler;
-    private final long electionTimeoutMinMillis;
-    private final long electionTimeoutMaxMillis;
+    private volatile long electionTimeoutMinMillis;
+    private volatile long electionTimeoutMaxMillis;
     private final long heartbeatIntervalMillis;
     private final Random random = new Random();
 
@@ -804,6 +807,19 @@ public class Raft extends AbstractConsensusAlgorithm {
     @Override
     public void setConsensusObserver(ConsensusObserver observer) {
         this.observer = (observer != null) ? observer : ConsensusObserver.NO_OP;
+    }
+
+    /**
+     * Rescales the randomized election timeout, used when the simulation's network delay
+     * changes mid-run. The new range is picked up by the next {@link #resetElectionTimer()}
+     * (which fires constantly while a leader heartbeats, or on the next election attempt),
+     * so a leader that would otherwise be displaced by late heartbeats gets a longer window
+     * before any follower times out.
+     */
+    @Override
+    public void setElectionTimeoutRange(long minMillis, long maxMillis) {
+        this.electionTimeoutMinMillis = minMillis;
+        this.electionTimeoutMaxMillis = maxMillis;
     }
 
     /**

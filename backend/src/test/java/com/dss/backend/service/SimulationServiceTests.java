@@ -196,7 +196,10 @@ public class SimulationServiceTests {
 
             simulationService.updateNetworkConditions("sim1", 0.25, 50L, 300L);
 
-            verify(dummyOrch, times(1)).setNetworkConditions(0.25, 50L, 300L);
+            // The service also rescales Raft's election timeout to the new delay: with the
+            // default 150-300ms floor and maxDelay 300ms, that's max(150, 900)=900 and
+            // max(300, 1800)=1800.
+            verify(dummyOrch, times(1)).setNetworkConditions(0.25, 50L, 300L, 900L, 1800L);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             fail("Reflection error: " + e.getMessage());
         }

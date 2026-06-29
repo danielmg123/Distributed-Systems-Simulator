@@ -243,6 +243,19 @@ public class VirtualNode {
     }
 
     /**
+     * Rescales this node's leader-election timeout range (Raft only; a no-op for other
+     * protocols). Called when the simulation's network delay changes mid-run so the
+     * timeout can stay above the new delivery delay -- see
+     * {@link ConsensusAlgorithm#setElectionTimeoutRange(long, long)}.
+     *
+     * @param minMillis minimum randomized election timeout
+     * @param maxMillis maximum randomized election timeout
+     */
+    public void setElectionTimeoutRange(long minMillis, long maxMillis) {
+        algorithm.setElectionTimeoutRange(minMillis, maxMillis);
+    }
+
+    /**
      * Submits a proposal to this node's consensus algorithm. For leader-based protocols
      * (Raft, Multi-Paxos), the algorithm itself ignores this unless the node is currently
      * the leader -- callers don't need to know which node that is.

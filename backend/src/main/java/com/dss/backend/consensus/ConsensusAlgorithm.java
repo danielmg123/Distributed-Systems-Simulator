@@ -101,6 +101,20 @@ public interface ConsensusAlgorithm {
     }
 
     /**
+     * Updates the randomized election-timeout range while a simulation is running, so a
+     * change to the simulated network delay can rescale it on the fly. The simulation
+     * keeps this comfortably above the configured delivery delay; if it didn't, raising
+     * the delay above a follower's timeout would make a healthy leader's heartbeats land
+     * too late and trigger endless re-elections. Default no-op -- only leader-election
+     * protocols (Raft) have an election timeout to rescale.
+     *
+     * @param minMillis minimum randomized election timeout
+     * @param maxMillis maximum randomized election timeout
+     */
+    default void setElectionTimeoutRange(long minMillis, long maxMillis) {
+    }
+
+    /**
      * Returns the value this node currently considers committed/chosen, for display in a
      * dashboard, or {@code null} if it hasn't committed anything yet. This is the node's
      * own view, so a follower may still be {@code null} while the leader/proposer already

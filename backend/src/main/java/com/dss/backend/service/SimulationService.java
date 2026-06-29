@@ -223,8 +223,8 @@ public class SimulationService {
         // Keeping the timeout comfortably above the max delay (and never below the
         // configured floor) lets a healthy leader hold the role.
         long maxDelayMs = (config != null) ? config.getMaxMessageDelayMs() : 0;
-        long electionTimeoutMin = Math.max(simulationProperties.getRaftElectionTimeoutMinMillis(), 3 * maxDelayMs);
-        long electionTimeoutMax = Math.max(simulationProperties.getRaftElectionTimeoutMaxMillis(), 6 * maxDelayMs);
+        long electionTimeoutMin = scaledElectionTimeoutMin(maxDelayMs);
+        long electionTimeoutMax = scaledElectionTimeoutMax(maxDelayMs);
         ConsensusAlgorithmFactory consensusFactory = new ConsensusAlgorithmFactory(
                 router, scheduler, simulationProperties, observer, electionTimeoutMin, electionTimeoutMax);
         NodeInitializationService nodeInitService = new NodeInitializationService(router, scheduler, consensusFactory, simulationProperties);
@@ -419,7 +419,26 @@ public class SimulationService {
     public void updateNetworkConditions(String simulationId, double messageLossRate, long minDelayMs, long maxDelayMs) {
         SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
         if (orchestrator != null) {
-            orchestrator.setNetworkConditions(messageLossRate, minDelayMs, maxDelayMs);
+            // Rescale Raft's election timeout to the new delay too -- otherwise raising the
+            // delivery delay above the fixed 150-300ms timeout makes heartbeats arrive too
+            // late and the cluster re-elects forever (no value ever commits).
+            orchestrator.setNetworkConditions(messageLossRate, minDelayMs, maxDelayMs,
+                    scaledElectionTimeoutMin(maxDelayMs), scaledElectionTimeoutMax(maxDelayMs));
         }
+    }
+
+    /**
+     * Raft's randomized election timeout, scaled so it stays comfortably above the
+     * configured delivery delay (and never below the configured floor). With the default
+     * 150-300ms range, once delivery delay approaches ~150ms a leader's heartbeats can land
+     * after a follower's timeout, triggering endless re-elections; scaling to ~3-6x the
+     * delay keeps a healthy leader in place. Shared by run-time setup and live updates.
+     */
+    private long scaledElectionTimeoutMin(long maxDelayMs) {
+        return Math.max(simulationProperties.getRaftElectionTimeoutMinMillis(), 3 * maxDelayMs);
+    }
+
+    private long scaledElectionTimeoutMax(long maxDelayMs) {
+        return Math.max(simulationProperties.getRaftElectionTimeoutMaxMillis(), 6 * maxDelayMs);
     }
 }
