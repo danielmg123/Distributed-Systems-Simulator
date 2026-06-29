@@ -3,7 +3,9 @@
 // come from the live, polled node statuses, so a node turns red the moment it fails and
 // the Raft leader is highlighted as leadership moves -- the graph tracks state in real
 // time, not just on initial load.
-const SIZE = 320;
+// SIZE leaves padding around the LAYOUT_RADIUS ring so the role caption drawn just below
+// the lowest node (see NODE_RADIUS + 13 offset) still falls inside the viewBox.
+const SIZE = 360;
 const CENTER = SIZE / 2;
 const LAYOUT_RADIUS = 120;
 const NODE_RADIUS = 24;
@@ -72,11 +74,13 @@ export default function TopologyGraph({ nodes, topology }) {
           return (
             <g key={id}>
               <circle cx={x} cy={y} r={NODE_RADIUS} fill={fill} stroke={stroke} strokeWidth="2" />
-              <text x={x} y={y - 2} textAnchor="middle" className="topology-graph__id">
+              <text x={x} y={y + 4} textAnchor="middle" className="topology-graph__id">
                 {id}
               </text>
+              {/* Role sits just below the circle, not inside it: labels like "CANDIDATE"
+                  are wider than the node and were getting clipped against the circle. */}
               {node?.roleLabel && (
-                <text x={x} y={y + 11} textAnchor="middle" className="topology-graph__role">
+                <text x={x} y={y + NODE_RADIUS + 13} textAnchor="middle" className="topology-graph__role">
                   {node.roleLabel}
                 </text>
               )}
