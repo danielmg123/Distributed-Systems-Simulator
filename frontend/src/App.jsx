@@ -117,7 +117,7 @@ function App() {
             <div className="panel__head">
               <h2 className="panel__title">Topology</h2>
             </div>
-            <TopologyGraph nodes={nodes} topology={topology} />
+            <TopologyGraph nodes={nodes} topology={topology} events={events} />
           </section>
 
           <section className="panel panel--nodes">

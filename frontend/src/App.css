@@ -349,30 +349,198 @@ button:active {
   text-transform: uppercase;
 }
 
-/* ---------- Topology (baseline only — full treatment in phase 3) ---------- */
+/* ---------- Topology (hero) ---------- */
 .topology-graph {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: var(--space-2) 0;
 }
 
 .topology-graph__svg {
   width: 100%;
-  max-width: 420px;
+  max-width: 500px;
   height: auto;
+  overflow: visible;
 }
 
 .topology-graph__id {
   font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: var(--weight-semibold);
   fill: var(--text-primary);
+  pointer-events: none;
 }
 
 .topology-graph__role {
   font-family: var(--font-mono);
   font-size: 10px;
-  fill: var(--text-muted);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-wide);
+  fill: currentColor;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+/* Edges */
+.topo-edge {
+  stroke: var(--border-strong);
+  stroke-opacity: 0.55;
+  stroke-width: 1.5;
+}
+
+.topo-pulse {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.topo-pulse--ambient {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-opacity: 0.5;
+  stroke-dasharray: 18 100;
+  animation: topo-travel 2.8s linear infinite;
+}
+
+.topo-pulse--strong {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-opacity: 0.95;
+  stroke-dasharray: 16 100;
+  animation: topo-travel 0.8s var(--ease-out) 1 both;
+}
+
+.topo-pulse--flash {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  animation: topo-flash 0.85s ease-out 1 both;
+}
+
+@keyframes topo-travel {
+  from {
+    stroke-dashoffset: 16;
+  }
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+@keyframes topo-flash {
+  0% {
+    stroke-opacity: 0;
+  }
+  30% {
+    stroke-opacity: 0.85;
+  }
+  100% {
+    stroke-opacity: 0;
+  }
+}
+
+/* Nodes */
+.topo-node {
+  color: var(--status-active);
+  transition: color 0.5s ease, opacity 0.5s ease;
+}
+
+.topo-node--failed {
+  opacity: 0.55;
+}
+
+.topo-drift-x {
+  animation-name: topo-drift-x;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+.topo-drift-y {
+  animation-name: topo-drift-y;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+@keyframes topo-drift-x {
+  from {
+    transform: translateX(-3.5px);
+  }
+  to {
+    transform: translateX(3.5px);
+  }
+}
+
+@keyframes topo-drift-y {
+  from {
+    transform: translateY(-4px);
+  }
+  to {
+    transform: translateY(4px);
+  }
+}
+
+.topo-glow {
+  fill: currentColor;
+  opacity: 0.22;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.topo-node--leader .topo-glow {
+  opacity: 0.5;
+  animation: topo-heartbeat 2.4s ease-in-out infinite;
+}
+
+.topo-node--candidate .topo-glow {
+  opacity: 0.4;
+  animation: topo-candidate 1.1s ease-in-out infinite;
+}
+
+.topo-node--failed .topo-glow {
+  opacity: 0.16;
+}
+
+@keyframes topo-heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.42;
+  }
+  50% {
+    transform: scale(1.16);
+    opacity: 0.7;
+  }
+}
+
+@keyframes topo-candidate {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.32;
+  }
+  50% {
+    transform: scale(1.22);
+    opacity: 0.6;
+  }
+}
+
+.topo-body {
+  fill: var(--bg-elevated);
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.topo-node--leader .topo-body {
+  stroke-width: 2.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topo-drift-x,
+  .topo-drift-y,
+  .topo-glow,
+  .topo-pulse {
+    animation: none !important;
+  }
 }
 
 /* ---------- Controls ---------- */
