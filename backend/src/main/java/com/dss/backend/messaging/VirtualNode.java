@@ -220,9 +220,15 @@ public class VirtualNode {
 
     /**
      * @return this node's protocol-specific role label (e.g. Raft's "LEADER"), or
-     *         {@code null} if the underlying algorithm has no such concept.
+     *         {@code null} if the node has crashed or the underlying algorithm has no such
+     *         concept. A FAILED node reports no role: it has stopped participating, so its
+     *         last-known role (e.g. "LEADER") would otherwise linger on the node's card and
+     *         read as a second, live leader. Recovering the node restores its role.
      */
     public String getRoleLabel() {
+        if (getNodeStatus() == NodeStatus.FAILED) {
+            return null;
+        }
         return algorithm.getRoleLabel();
     }
 

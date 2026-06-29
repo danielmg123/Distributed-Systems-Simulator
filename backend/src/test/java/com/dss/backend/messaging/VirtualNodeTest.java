@@ -157,6 +157,15 @@ public class VirtualNodeTest {
     }
 
     @Test
+    public void getRoleLabel_ReturnsNullForFailedNode_WithoutConsultingAlgorithm() {
+        // A crashed node reports no role, regardless of the role its algorithm last held --
+        // otherwise a failed leader's card would keep showing "LEADER".
+        testNode.failNode();
+        assertNull(testNode.getRoleLabel(), "a FAILED node should report no role");
+        verify(consensusSpy, never()).getRoleLabel();
+    }
+
+    @Test
     public void phiCheckerTask_SuspectsFailureWhenPhiAboveThreshold() {
         // Create a TestVirtualNodeWithPhiSpy using a spy logger.
         AppLogger spyLogger = spy(new DefaultAppLogger(TestVirtualNodeWithPhiSpy.class));
