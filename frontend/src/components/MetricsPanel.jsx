@@ -1,11 +1,10 @@
 // Displays the latest MetricsSnapshot pushed over the simulation's WebSocket topic.
 export default function MetricsPanel({ metrics }) {
   if (!metrics) {
-    return null;
+    return <p className="metrics-panel__empty">Waiting for metrics…</p>;
   }
   return (
     <div className="metrics-panel">
-      <h3>Metrics</h3>
       <dl>
         <dt>Messages</dt>
         <dd>{metrics.totalMessages}</dd>

@@ -6,7 +6,6 @@
 export default function EventLog({ events }) {
   return (
     <div className="event-log">
-      <h3>Event Log</h3>
       <ul>
         {events
           .slice()

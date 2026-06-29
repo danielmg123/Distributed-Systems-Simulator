@@ -86,7 +86,23 @@ function App() {
 
   return (
     <div className="app">
-      <h1>Distributed Systems Simulator</h1>
+      <header className="app-header">
+        <div className="app-header__brand">
+          <span className="app-header__mark" aria-hidden="true" />
+          <div>
+            <h1 className="app-header__title">Distributed Systems Simulator</h1>
+            <p className="app-header__subtitle">Paxos · Multi-Paxos · Raft</p>
+          </div>
+        </div>
+        {simulationId && (
+          <div className="app-header__meta">
+            <span className="status-dot status-dot--live" aria-hidden="true" />
+            <span className="app-header__state">Running</span>
+            <code className="app-header__sim-id">{simulationId}</code>
+          </div>
+        )}
+      </header>
+
       {error && (
         <p className="error" onClick={() => setError(null)}>
           {error} (click to dismiss)
@@ -96,19 +112,50 @@ function App() {
       {!simulationId ? (
         <SimulationSetup onSimulationStarted={setSimulationId} />
       ) : (
-        <div className="dashboard">
-          <p className="dashboard__sim-id">
-            Simulation: <code>{simulationId}</code>
-          </p>
-          <NodeGrid nodes={nodes} onFailNode={handleFailNode} onRecoverNode={handleRecoverNode} />
-          <TopologyGraph nodes={nodes} topology={topology} />
+        <main className="dashboard">
+          <section className="panel panel--topology">
+            <div className="panel__head">
+              <h2 className="panel__title">Topology</h2>
+            </div>
+            <TopologyGraph nodes={nodes} topology={topology} />
+          </section>
+
+          <section className="panel panel--nodes">
+            <div className="panel__head">
+              <h2 className="panel__title">Nodes</h2>
+              <span className="panel__count">{nodes.length}</span>
+            </div>
+            <NodeGrid nodes={nodes} onFailNode={handleFailNode} onRecoverNode={handleRecoverNode} />
+          </section>
+
           <div className="dashboard__row">
-            <Controls onPropose={handlePropose} onStop={handleStop} />
-            <NetworkSliders onChange={handleNetworkConditionsChange} />
-            <MetricsPanel metrics={metrics} />
+            <section className="panel">
+              <div className="panel__head">
+                <h2 className="panel__title">Controls</h2>
+              </div>
+              <Controls onPropose={handlePropose} onStop={handleStop} />
+            </section>
+            <section className="panel">
+              <div className="panel__head">
+                <h2 className="panel__title">Network conditions</h2>
+              </div>
+              <NetworkSliders onChange={handleNetworkConditionsChange} />
+            </section>
+            <section className="panel">
+              <div className="panel__head">
+                <h2 className="panel__title">Metrics</h2>
+              </div>
+              <MetricsPanel metrics={metrics} />
+            </section>
           </div>
-          <EventLog events={events} />
-        </div>
+
+          <section className="panel panel--events">
+            <div className="panel__head">
+              <h2 className="panel__title">Event log</h2>
+            </div>
+            <EventLog events={events} />
+          </section>
+        </main>
       )}
     </div>
   );

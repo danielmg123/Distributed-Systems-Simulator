@@ -54,7 +54,6 @@ export default function TopologyGraph({ nodes, topology }) {
 
   return (
     <div className="topology-graph">
-      <h3>Topology</h3>
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="topology-graph__svg">
         {edges.map(([a, b]) => (
           <line

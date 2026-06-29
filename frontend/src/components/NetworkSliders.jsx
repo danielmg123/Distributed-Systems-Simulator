@@ -21,7 +21,6 @@ export default function NetworkSliders({ onChange }) {
 
   return (
     <div className="network-sliders">
-      <h3>Network Conditions</h3>
       <label>
         Message loss rate: {(lossRate * 100).toFixed(0)}%
         <input
