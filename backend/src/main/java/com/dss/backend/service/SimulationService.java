@@ -85,9 +85,13 @@ public class SimulationService {
     private final Map<String, SimulationOrchestrator> orchestrators = new ConcurrentHashMap<>();
 
     /**
-     * A shared performance metrics collector to accumulate stats across simulations.
+     * One performance metrics collector per simulation, keyed by simulation ID. Each run
+     * gets its own collector (created in {@link #runSimulation(String)}) so counts reflect
+     * just that simulation rather than accumulating across every run in the process. The
+     * collector is kept after the simulation stops so its final tallies stay queryable, and
+     * is discarded only when the simulation is deleted.
      */
-    private final PerformanceMetricsCollector metricsCollector = new DefaultMetricsCollector();
+    private final Map<String, PerformanceMetricsCollector> metricsCollectors = new ConcurrentHashMap<>();
 
     public SimulationService(SimulationRepository simulationRepository,
                              SimulationWebSocketController simulationWebSocketController,
@@ -138,6 +142,8 @@ public class SimulationService {
         simulationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + id));
         simulationRepository.deleteById(id);
+        // Drop this simulation's metrics collector now that it's gone for good.
+        metricsCollectors.remove(id);
     }
 
     /**
@@ -192,6 +198,9 @@ public class SimulationService {
         // delay can actually be simulated (see setMessageLossRate/setMaxDelayMs below).
         Scheduler scheduler = new DefaultScheduler(
                 Executors.newScheduledThreadPool(simulationProperties.getSchedulerThreadPoolSize()));
+        // Fresh collector for this run so its metrics don't mingle with other simulations'.
+        PerformanceMetricsCollector metricsCollector = new DefaultMetricsCollector();
+        metricsCollectors.put(simulationId, metricsCollector);
         MessageRouter router = new MessageRouter(metricsCollector, scheduler);
         if (config != null) {
             router.setMessageLossRate(config.getMessageLossRate());
@@ -339,7 +348,10 @@ public class SimulationService {
     public void propose(String simulationId, Object value) {
         SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
         if (orchestrator != null) {
-            metricsCollector.recordProposal();
+            PerformanceMetricsCollector metricsCollector = metricsCollectors.get(simulationId);
+            if (metricsCollector != null) {
+                metricsCollector.recordProposal();
+            }
             orchestrator.propose(simulationId, value);
         }
     }
@@ -365,8 +377,9 @@ public class SimulationService {
      *
      * <p>
      * If the simulation is running, we fetch the snapshot from its orchestrator's
-     * {@link MetricsUpdateService}. Otherwise, we return a snapshot from the shared
-     * collector (which may be the default or last known data if the simulation is stopped).
+     * {@link MetricsUpdateService}. Otherwise, we return this simulation's own collector's
+     * last snapshot (its final tallies if it has been stopped), or an empty snapshot if we
+     * have no record of the simulation ever running.
      * </p>
      *
      * @param simulationId the unique ID of the simulation.
@@ -376,8 +389,11 @@ public class SimulationService {
         // Attempt to retrieve orchestrator for the given simulation
         SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
         if (orchestrator == null) {
-            // e.g., simulation might be stopped. We fall back to the shared collector's snapshot
-            return metricsCollector.getSnapshot();
+            // Not currently running: return this sim's own final tallies if we have them,
+            // else an empty snapshot. Metrics are per-simulation, so we never report
+            // another run's counts here.
+            PerformanceMetricsCollector metricsCollector = metricsCollectors.get(simulationId);
+            return metricsCollector != null ? metricsCollector.getSnapshot() : new MetricsSnapshot(0, 0, 0, 0);
         }
         // If running, orchestrator returns real-time data
         return orchestrator.getMetricsSnapshot();

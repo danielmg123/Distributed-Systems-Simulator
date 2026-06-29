@@ -207,8 +207,8 @@ public class SimulationIntegrationTest {
             assertTrue(waitForLeader(id, 5000), "a leader must be elected before proposing");
             simulationService.propose(id, "x=1");
 
-            // The shared collector accumulates across simulations, so assert >= 1 rather
-            // than == 1. The point is that these counters move at all (they were dead).
+            // Metrics are per-simulation, so this run starts from zero; assert >= 1 (rather
+            // than == 1) to stay robust to retried/duplicated protocol traffic.
             MetricsSnapshot snap = null;
             boolean recorded = false;
             long deadline = System.currentTimeMillis() + 5000;
