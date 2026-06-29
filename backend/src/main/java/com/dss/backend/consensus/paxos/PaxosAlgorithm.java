@@ -200,6 +200,18 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
         return "ACCEPTOR";
     }
 
+    /**
+     * Once a value is chosen, basic Paxos is single-decree: later proposals re-run the
+     * protocol but adopt the already-chosen value, so they don't change it. Surfacing this
+     * on the node card (next to the committed value) makes that correct behavior obvious
+     * rather than looking like proposals are being ignored. Returns {@code null} until a
+     * value has actually been chosen.
+     */
+    @Override
+    public String getStateSummary() {
+        return paxosState.getChosenValue() != null ? "single-decree · reaffirms chosen value" : null;
+    }
+
     @Override
     public void setConsensusObserver(ConsensusObserver observer) {
         this.observer = (observer != null) ? observer : ConsensusObserver.NO_OP;

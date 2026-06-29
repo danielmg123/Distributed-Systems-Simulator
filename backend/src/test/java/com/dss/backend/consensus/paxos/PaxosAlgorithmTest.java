@@ -43,6 +43,17 @@ public class PaxosAlgorithmTest {
     }
 
     @Test
+    public void getStateSummary_explainsSingleDecreeOnceValueChosen() {
+        // No note before anything is chosen.
+        assertNull(paxos.getStateSummary());
+
+        // Once a value is chosen, the card should explain the single-decree behavior.
+        paxos.commit("1");
+        assertNotNull(paxos.getStateSummary());
+        assertTrue(paxos.getStateSummary().contains("single-decree"));
+    }
+
+    @Test
     public void propose_GeneratesProposalNumberAndBroadcastsPrepare() {
         // Call propose with a test value.
         paxos.propose("testValue");
