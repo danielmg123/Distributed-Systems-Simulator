@@ -1,0 +1,126 @@
+/*
+ * DSS design tokens
+ * ------------------
+ * The single source of truth for the dashboard's visual language: palette,
+ * typography, spacing, radii, borders, and motion. Components reference these
+ * variables rather than hard-coding values, so the whole look is tunable here.
+ *
+ * Aesthetic: deep near-black surfaces, one vivid cyan accent used sparingly,
+ * muted status colors, monospace for data and a clean sans for chrome.
+ */
+
+:root {
+  /* ----- Surfaces (darkest -> raised) ----- */
+  --bg-base: #0a0e14;        /* app canvas */
+  --bg-surface: #10151f;     /* panels, cards */
+  --bg-elevated: #161c28;    /* hover, raised wells, popovers */
+  --bg-hover: #161c28;       /* interactive hover fill (alias of elevated) */
+  --bg-inset: #0c1119;       /* inputs, sunken areas, code blocks */
+
+  /* ----- Borders & dividers (hairline, low contrast) ----- */
+  --border-subtle: #1a212e;  /* quiet dividers between rows */
+  --border-default: #232c3b; /* default panel / card outline */
+  --border-strong: #313c4f;  /* hover / focus-adjacent outline */
+
+  /* ----- Text ----- */
+  --text-primary: #e6edf3;   /* headings, key values */
+  --text-secondary: #9aa7b8; /* body, labels */
+  --text-muted: #7d8a9c;     /* captions, metadata — clears WCAG AA at small sizes */
+  --text-faint: #3f4a5a;     /* large/decorative de-emphasis only (sub-AA on purpose) */
+
+  /* ----- Accent: electric cyan (used sparingly) ----- */
+  --accent: #22d3ee;
+  --accent-bright: #5fe2f5;  /* hover / active emphasis */
+  --accent-dim: #1aa7bd;     /* pressed */
+  --accent-soft: rgba(34, 211, 238, 0.12); /* tinted backgrounds */
+  --accent-line: rgba(34, 211, 238, 0.40); /* tinted borders */
+  --accent-contrast: #04222a; /* text/icon on a solid cyan fill */
+
+  /* ----- Interaction states ----- */
+  --focus-ring: 0 0 0 2px var(--bg-base), 0 0 0 4px rgba(34, 211, 238, 0.55); /* visible keyboard focus */
+
+  /* ----- Status palette ----- */
+  /* active / healthy — muted green */
+  --status-active: #3fb96b;
+  --status-active-soft: rgba(63, 185, 107, 0.12);
+  --status-active-line: rgba(63, 185, 107, 0.40);
+
+  /* failed — muted red */
+  --status-failed: #e5534b;
+  --status-failed-soft: rgba(229, 83, 75, 0.12);
+  --status-failed-line: rgba(229, 83, 75, 0.40);
+
+  /* leader — the accent cyan does double duty */
+  --status-leader: var(--accent);
+  --status-leader-soft: var(--accent-soft);
+  --status-leader-line: var(--accent-line);
+
+  /* candidate — amber */
+  --status-candidate: #e3b341;
+  --status-candidate-soft: rgba(227, 179, 65, 0.12);
+  --status-candidate-line: rgba(227, 179, 65, 0.40);
+
+  /* ----- Typography ----- */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular",
+    Menlo, Consolas, monospace;
+
+  /* type scale */
+  --text-2xs: 0.6875rem; /* 11px — micro labels, captions */
+  --text-xs: 0.75rem;    /* 12px — metadata, table text */
+  --text-sm: 0.8125rem;  /* 13px — secondary body */
+  --text-base: 0.875rem; /* 14px — default body */
+  --text-md: 1rem;       /* 16px — emphasis */
+  --text-lg: 1.25rem;    /* 20px — panel headings */
+  --text-xl: 1.5rem;     /* 24px — section titles */
+  --text-2xl: 1.875rem;  /* 30px — app title */
+
+  /* weights */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* line heights */
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55;
+
+  /* letter spacing — wide tracking for uppercase eyebrow labels */
+  --tracking-wide: 0.06em;
+  --tracking-wider: 0.10em;
+
+  /* ----- Spacing (4px base) ----- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ----- Radii ----- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-full: 999px;
+
+  /* ----- Borders ----- */
+  --border-width: 1px;
+
+  /* ----- Motion ----- */
+  --transition-fast: 120ms ease;
+  --transition-base: 180ms ease;
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ----- Elevation: soft glows over heavy shadows ----- */
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-raised: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --glow-accent: 0 0 0 1px var(--accent-line), 0 0 14px rgba(34, 211, 238, 0.25);
+  --glow-active: 0 0 0 1px var(--status-active-line), 0 0 12px rgba(63, 185, 107, 0.20);
+  --glow-failed: 0 0 0 1px var(--status-failed-line), 0 0 12px rgba(229, 83, 75, 0.22);
+  --glow-candidate: 0 0 0 1px var(--status-candidate-line), 0 0 12px rgba(227, 179, 65, 0.20);
+}
