@@ -93,6 +93,8 @@ public class MultiPaxos implements ConsensusAlgorithm {
 
     // --- Accept phase variables ---
     private int acceptResponseCount = 0;
+    /** The last proposal number we already committed, so we commit each one exactly once. */
+    private int lastCommittedProposal = -1;
 
     // --- Node-specific Paxos state ---
     private int promisedId = -1;        // The highest proposal ID we promised not to accept below
@@ -498,8 +500,11 @@ public class MultiPaxos implements ConsensusAlgorithm {
         appLogger.info("Received ACCEPTED from {} for proposal #{} (count = {})",
                 sourceNodeId, proposalNumber, acceptResponseCount);
 
-        // If we’ve reached quorum on ACCEPTED responses, commit the value
-        if (acceptResponseCount >= quorum) {
+        // If we’ve reached quorum on ACCEPTED responses, commit the value -- but only
+        // once per proposal. Without this guard every ACCEPTED past quorum re-committed
+        // the same value, producing duplicate COMMIT events and an inflated commit count.
+        if (acceptResponseCount >= quorum && proposalNumber != lastCommittedProposal) {
+            lastCommittedProposal = proposalNumber;
             Object valueToCommit = payload.getProposedValue();
             appLogger.info("Quorum reached on ACCEPTED responses for proposal #{}. Committing value: {}",
                     proposalNumber, valueToCommit);

@@ -430,12 +430,16 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
             return;
         }
 
-        // Increment the count and update the map.
+        // Increment the count.
         int newCount = oldCount + 1;
-        acceptCountMap.put(proposalNumber, newCount);
 
-        // If we've reached the majority threshold, commit the value.
+        // If we've reached the majority threshold, commit the value exactly once.
         if (newCount >= majority) {
+            // Drop the proposal from the map so any further ACCEPTEDs for it fall through
+            // the oldCount == null guard above instead of re-committing (the chosen value
+            // was being committed once per ACCEPTED past quorum).
+            acceptCountMap.remove(proposalNumber);
+
             commit(payload.getProposedValue());
             observer.onCommitted(myNodeId, payload.getProposedValue());
 
@@ -444,9 +448,8 @@ public class PaxosAlgorithm extends AbstractConsensusAlgorithm {
             // Broadcasting COMMIT here is the Learner phase: it disseminates the
             // chosen value to every node, not just the proposer.
             PaxosMessagingUtil.broadcastCommit(broadcaster, proposalNumber, payload.getProposedValue());
-
-            // Optionally, we could remove references to that proposal from
-            // proposalStateMap and acceptCountMap for cleanup.
+        } else {
+            acceptCountMap.put(proposalNumber, newCount);
         }
     }
 
