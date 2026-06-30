@@ -2,6 +2,7 @@ package com.dss.backend.service;
 
 import com.dss.backend.config.SimulationProperties;
 import com.dss.backend.exception.ResourceNotFoundException;
+import com.dss.backend.exception.SimulationConflictException;
 import com.dss.backend.model.Simulation;
 import com.dss.backend.model.SimulationConfig;
 import com.dss.backend.model.SimulationStatus;
@@ -176,11 +177,11 @@ public class SimulationServiceTests {
     }
 
     @Test
-    public void getTopologyMapping_NoRunningSimulation_ReturnsEmptyMap() {
-        Map<String, List<String>> result = simulationService.getTopologyMapping("nonexistent-sim");
-
-        assertNotNull(result);
-        assertTrue(result.isEmpty());
+    public void getTopologyMapping_NotRunningSimulation_Throws() {
+        // A simulation with no live orchestrator (e.g. never run, or lost to a backend
+        // restart) must report a 409 conflict rather than silently returning empty.
+        assertThrows(SimulationConflictException.class,
+                () -> simulationService.getTopologyMapping("nonexistent-sim"));
     }
 
     @Test
@@ -206,9 +207,10 @@ public class SimulationServiceTests {
     }
 
     @Test
-    public void updateNetworkConditions_NoRunningSimulation_IsNoOp() {
-        // No orchestrator registered for "nonexistent-sim" -- must not throw.
-        assertDoesNotThrow(() -> simulationService.updateNetworkConditions("nonexistent-sim", 0.5, 10L, 100L));
+    public void updateNetworkConditions_NotRunningSimulation_Throws() {
+        // No orchestrator registered for "nonexistent-sim" -- must report a 409 conflict.
+        assertThrows(SimulationConflictException.class,
+                () -> simulationService.updateNetworkConditions("nonexistent-sim", 0.5, 10L, 100L));
     }
 
     @Test
@@ -231,8 +233,9 @@ public class SimulationServiceTests {
     }
 
     @Test
-    public void recoverNode_NoRunningSimulation_IsNoOp() {
-        assertDoesNotThrow(() -> simulationService.recoverNode("nonexistent-sim", "node1"));
+    public void recoverNode_NotRunningSimulation_Throws() {
+        assertThrows(SimulationConflictException.class,
+                () -> simulationService.recoverNode("nonexistent-sim", "node1"));
     }
 
     @Test
@@ -255,8 +258,9 @@ public class SimulationServiceTests {
     }
 
     @Test
-    public void propose_NoRunningSimulation_IsNoOp() {
-        assertDoesNotThrow(() -> simulationService.propose("nonexistent-sim", "set x=1"));
+    public void propose_NotRunningSimulation_Throws() {
+        assertThrows(SimulationConflictException.class,
+                () -> simulationService.propose("nonexistent-sim", "set x=1"));
     }
 
     @Test
@@ -285,10 +289,8 @@ public class SimulationServiceTests {
     }
 
     @Test
-    public void getNodeStatuses_NoRunningSimulation_ReturnsEmptyList() {
-        List<com.dss.backend.dto.NodeDTO> result = simulationService.getNodeStatuses("nonexistent-sim");
-
-        assertNotNull(result);
-        assertTrue(result.isEmpty());
+    public void getNodeStatuses_NotRunningSimulation_Throws() {
+        assertThrows(SimulationConflictException.class,
+                () -> simulationService.getNodeStatuses("nonexistent-sim"));
     }
 }

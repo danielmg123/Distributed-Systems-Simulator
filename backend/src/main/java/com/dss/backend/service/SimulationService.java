@@ -5,7 +5,7 @@ import com.dss.backend.dto.NodeDTO;
 import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.exception.ResourceNotFoundException;
-import com.dss.backend.exception.SimulationException;
+import com.dss.backend.exception.SimulationConflictException;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 import com.dss.backend.messaging.MessageRouter;
@@ -170,7 +170,7 @@ public class SimulationService {
         //    message loops with no handle left to shut them down -- and leaving two node
         //    sets for the same id feeding the shared metrics. Stop it first to re-run.
         if (orchestrators.containsKey(simulationId)) {
-            throw new SimulationException("Simulation " + simulationId + " is already running.");
+            throw new SimulationConflictException("Simulation " + simulationId + " is already running.");
         }
 
         // 1. Retrieve the simulation from the database
@@ -325,12 +325,27 @@ public class SimulationService {
      * @param nodeId the node to be forcibly failed.
      */
     public void failNode(String simulationId, String nodeId) {
+        requireRunning(simulationId).failNode(simulationId, nodeId);
+    }
+
+    /**
+     * <p>Returns the live orchestrator for a running simulation, or throws if the
+     * simulation isn't currently running. The {@link #orchestrators} map is in-memory
+     * only, so a simulation can stop existing here (e.g. after a backend restart) while
+     * its database record still says RUNNING. Throwing a {@link SimulationConflictException}
+     * (HTTP 409) lets the caller surface a real error instead of silently doing nothing
+     * against a simulation that's no longer live.</p>
+     *
+     * @param simulationId the ID of the simulation that must be running.
+     * @return the registered {@link SimulationOrchestrator}.
+     * @throws SimulationConflictException if no orchestrator is registered for the ID.
+     */
+    private SimulationOrchestrator requireRunning(String simulationId) {
         SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
-        if (orchestrator != null) {
-            orchestrator.failNode(simulationId, nodeId);
+        if (orchestrator == null) {
+            throw new SimulationConflictException("Simulation " + simulationId + " is not running.");
         }
-        // If the simulation orchestrator does not exist (simulation not running),
-        // we do nothing or could log a warning.
+        return orchestrator;
     }
 
     /**
@@ -341,10 +356,7 @@ public class SimulationService {
      * @param nodeId the node to recover.
      */
     public void recoverNode(String simulationId, String nodeId) {
-        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
-        if (orchestrator != null) {
-            orchestrator.recoverNode(simulationId, nodeId);
-        }
+        requireRunning(simulationId).recoverNode(simulationId, nodeId);
     }
 
     /**
@@ -356,29 +368,23 @@ public class SimulationService {
      * @param value the value to propose.
      */
     public void propose(String simulationId, Object value) {
-        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
-        if (orchestrator != null) {
-            PerformanceMetricsCollector metricsCollector = metricsCollectors.get(simulationId);
-            if (metricsCollector != null) {
-                metricsCollector.recordProposal();
-            }
-            orchestrator.propose(simulationId, value);
+        SimulationOrchestrator orchestrator = requireRunning(simulationId);
+        PerformanceMetricsCollector metricsCollector = metricsCollectors.get(simulationId);
+        if (metricsCollector != null) {
+            metricsCollector.recordProposal();
         }
+        orchestrator.propose(simulationId, value);
     }
 
     /**
      * <p>Returns a live snapshot of every node's status and (protocol-specific) role for
-     * a running simulation, for a dashboard's node grid. Returns an empty list if the
-     * simulation isn't currently running.</p>
+     * a running simulation, for a dashboard's node grid.</p>
      *
      * @param simulationId the ID of the running simulation.
+     * @throws SimulationConflictException if the simulation isn't currently running.
      */
     public List<NodeDTO> getNodeStatuses(String simulationId) {
-        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
-        if (orchestrator == null) {
-            return List.of();
-        }
-        return orchestrator.getNodeStatuses();
+        return requireRunning(simulationId).getNodeStatuses();
     }
 
     /**
@@ -416,15 +422,12 @@ public class SimulationService {
      * how messages are actually routed between nodes.</p>
      *
      * @param simulationId the unique ID of the simulation.
-     * @return a map of node ID -> list of neighbor node IDs, or an empty map if the
-     *         simulation isn't currently running or no topology was configured.
+     * @return a map of node ID -> list of neighbor node IDs (empty if no topology was
+     *         configured for the running simulation).
+     * @throws SimulationConflictException if the simulation isn't currently running.
      */
     public Map<String, List<String>> getTopologyMapping(String simulationId) {
-        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
-        if (orchestrator == null) {
-            return Map.of();
-        }
-        return orchestrator.getTopologyMapping();
+        return requireRunning(simulationId).getTopologyMapping();
     }
 
     /**
@@ -433,24 +436,21 @@ public class SimulationService {
      * subsequent message sends. Intended to back UI controls (e.g. sliders) that let a
      * user tune conditions without restarting the simulation.</p>
      *
-     * <p>If the simulation isn't currently running (no orchestrator registered), this
-     * is a no-op -- there's no live {@link com.dss.backend.messaging.MessageRouter} to
-     * update.</p>
+     * <p>Throws if the simulation isn't currently running (no orchestrator registered) --
+     * there's no live {@link com.dss.backend.messaging.MessageRouter} to update.</p>
      *
      * @param simulationId    the unique ID of the simulation.
      * @param messageLossRate probability (0.0-1.0) that a message is randomly dropped.
      * @param minDelayMs      minimum simulated delivery delay, in milliseconds.
      * @param maxDelayMs      maximum simulated delivery delay, in milliseconds (0 disables delay).
+     * @throws SimulationConflictException if the simulation isn't currently running.
      */
     public void updateNetworkConditions(String simulationId, double messageLossRate, long minDelayMs, long maxDelayMs) {
-        SimulationOrchestrator orchestrator = orchestrators.get(simulationId);
-        if (orchestrator != null) {
-            // Rescale Raft's election timeout to the new delay too -- otherwise raising the
-            // delivery delay above the fixed 150-300ms timeout makes heartbeats arrive too
-            // late and the cluster re-elects forever (no value ever commits).
-            orchestrator.setNetworkConditions(messageLossRate, minDelayMs, maxDelayMs,
-                    scaledElectionTimeoutMin(maxDelayMs), scaledElectionTimeoutMax(maxDelayMs));
-        }
+        // Rescale Raft's election timeout to the new delay too -- otherwise raising the
+        // delivery delay above the fixed 150-300ms timeout makes heartbeats arrive too
+        // late and the cluster re-elects forever (no value ever commits).
+        requireRunning(simulationId).setNetworkConditions(messageLossRate, minDelayMs, maxDelayMs,
+                scaledElectionTimeoutMin(maxDelayMs), scaledElectionTimeoutMax(maxDelayMs));
     }
 
     /**

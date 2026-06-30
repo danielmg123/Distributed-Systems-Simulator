@@ -23,6 +23,19 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
     }
 
+    @ExceptionHandler(SimulationConflictException.class)
+    public ResponseEntity<ErrorResponse> handleSimulationConflictException(
+            SimulationConflictException ex, HttpServletRequest request) {
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.CONFLICT.value(),
+                "Conflict",
+                ex.getMessage(),
+                request.getRequestURI()
+        );
+        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+    }
+
     @ExceptionHandler(SimulationException.class)
     public ResponseEntity<ErrorResponse> handleSimulationException(
             SimulationException ex, HttpServletRequest request) {

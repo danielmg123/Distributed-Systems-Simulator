@@ -19,6 +19,20 @@ function App() {
   const [error, setError] = useState(null);
   const { metrics, events } = useSimulationSocket(simulationId);
 
+  // The backend returns 404/409 when a simulation is no longer running (e.g. it was
+  // stopped, or the backend restarted and lost the in-memory run). Treat that as the end
+  // of this run: show a clear message and drop back to the setup screen instead of
+  // leaving a stale dashboard that silently does nothing. Other (transient) failures just
+  // surface their message and leave the dashboard in place.
+  const handleApiError = useCallback((err) => {
+    if (err && (err.status === 404 || err.status === 409)) {
+      setError("This simulation is no longer running. Start a new one.");
+      setSimulationId(null);
+    } else {
+      setError(err.message);
+    }
+  }, []);
+
   useEffect(() => {
     if (!simulationId) {
       setNodes([]);
@@ -33,7 +47,7 @@ function App() {
             setNodes(result);
           }
         })
-        .catch((err) => !cancelled && setError(err.message));
+        .catch((err) => !cancelled && handleApiError(err));
     };
     poll();
     const interval = setInterval(poll, NODE_POLL_MS);
@@ -41,7 +55,7 @@ function App() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [simulationId]);
+  }, [simulationId, handleApiError]);
 
   // The topology adjacency map is fixed for a run, so fetch it once. Node colors update
   // live via the node-status poll above.
@@ -54,23 +68,23 @@ function App() {
     api
       .getTopology(simulationId)
       .then((result) => !cancelled && setTopology(result || {}))
-      .catch((err) => !cancelled && setError(err.message));
+      .catch((err) => !cancelled && handleApiError(err));
     return () => {
       cancelled = true;
     };
-  }, [simulationId]);
+  }, [simulationId, handleApiError]);
 
   const handleFailNode = useCallback(
-    (nodeId) => api.failNode(simulationId, nodeId).catch((err) => setError(err.message)),
-    [simulationId]
+    (nodeId) => api.failNode(simulationId, nodeId).catch(handleApiError),
+    [simulationId, handleApiError]
   );
   const handleRecoverNode = useCallback(
-    (nodeId) => api.recoverNode(simulationId, nodeId).catch((err) => setError(err.message)),
-    [simulationId]
+    (nodeId) => api.recoverNode(simulationId, nodeId).catch(handleApiError),
+    [simulationId, handleApiError]
   );
   const handlePropose = useCallback(
-    (value) => api.propose(simulationId, value).catch((err) => setError(err.message)),
-    [simulationId]
+    (value) => api.propose(simulationId, value).catch(handleApiError),
+    [simulationId, handleApiError]
   );
   const handleStop = useCallback(() => {
     api
@@ -80,8 +94,8 @@ function App() {
   }, [simulationId]);
   const handleNetworkConditionsChange = useCallback(
     (conditions) =>
-      simulationId && api.updateNetworkConditions(simulationId, conditions).catch((err) => setError(err.message)),
-    [simulationId]
+      simulationId && api.updateNetworkConditions(simulationId, conditions).catch(handleApiError),
+    [simulationId, handleApiError]
   );
 
   return (

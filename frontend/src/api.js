@@ -10,7 +10,11 @@ async function request(path, options = {}) {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`${options.method || "GET"} ${path} failed: ${res.status} ${text}`);
+    const error = new Error(`${options.method || "GET"} ${path} failed: ${res.status} ${text}`);
+    // Expose the status so callers can distinguish a definitive simulation-state
+    // conflict (404/409) from a transient failure.
+    error.status = res.status;
+    throw error;
   }
   const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
