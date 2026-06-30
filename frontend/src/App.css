@@ -305,6 +305,19 @@ input[type="range"]:focus-visible {
   gap: var(--space-3);
 }
 
+/* Cap the nodes panel so a high node count scrolls internally instead of towering far
+   below the fixed-height topology panel and leaving an asymmetric blank gap. */
+.panel--nodes {
+  max-height: 545px;
+}
+
+.panel--nodes .node-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--space-1);
+}
+
 .node-grid__empty {
   margin: 0;
   color: var(--text-muted);
