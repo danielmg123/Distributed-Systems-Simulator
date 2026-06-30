@@ -2,7 +2,6 @@ package com.dss.backend.controller;
 
 import com.dss.backend.dto.SimulationDTO;
 import com.dss.backend.exception.ResourceNotFoundException;
-import com.dss.backend.mapper.EventMapper;
 import com.dss.backend.mapper.SimulationMapper;
 import com.dss.backend.model.Simulation;
 import com.dss.backend.model.SimulationStatus;
@@ -34,9 +33,6 @@ public class SimulationControllerTest {
 
     @MockBean
     private SimulationMapper simulationMapper;
-
-    @MockBean
-    private EventMapper eventMapper;
 
     @Autowired
     private ObjectMapper objectMapper;
