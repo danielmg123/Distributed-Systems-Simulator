@@ -5,6 +5,7 @@ import com.dss.backend.dto.NodeDTO;
 import com.dss.backend.engine.DefaultScheduler;
 import com.dss.backend.engine.Scheduler;
 import com.dss.backend.exception.ResourceNotFoundException;
+import com.dss.backend.exception.SimulationException;
 import com.dss.backend.logging.AppLogger;
 import com.dss.backend.logging.DefaultAppLogger;
 import com.dss.backend.messaging.MessageRouter;
@@ -163,6 +164,15 @@ public class SimulationService {
      * @throws ResourceNotFoundException if the simulation does not exist.
      */
     public void runSimulation(String simulationId) {
+        // 0. Refuse to start a simulation that's already running. Without this guard a
+        //    second run for the same id would overwrite its orchestrator entry below,
+        //    stranding the previous run's scheduler thread pool, heartbeats, and per-node
+        //    message loops with no handle left to shut them down -- and leaving two node
+        //    sets for the same id feeding the shared metrics. Stop it first to re-run.
+        if (orchestrators.containsKey(simulationId)) {
+            throw new SimulationException("Simulation " + simulationId + " is already running.");
+        }
+
         // 1. Retrieve the simulation from the database
         Simulation simulation = simulationRepository.findById(simulationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Simulation not found with id: " + simulationId));
