@@ -82,6 +82,17 @@
 .status-dot--live {
   background: var(--status-active);
   box-shadow: var(--glow-active);
+  animation: status-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* ---------- Error banner ---------- */
@@ -146,6 +157,18 @@ button:hover {
 
 button:active {
   transform: translateY(0.5px);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input[type="range"]:focus-visible {
+  box-shadow: none;
+  outline: 2px solid var(--accent-line);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
 }
 
 /* Primary (key) actions get the accent. */
@@ -590,11 +613,22 @@ button:active {
   stroke-width: 2.5;
 }
 
+/* Honor a reduced-motion preference everywhere: stop the drift, glows, pulses, and the
+   live indicator, and collapse transitions so state changes still apply instantly. */
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
   .topo-drift-x,
   .topo-drift-y,
   .topo-glow,
-  .topo-pulse {
+  .topo-pulse,
+  .status-dot--live {
     animation: none !important;
   }
 }
@@ -754,4 +788,28 @@ button:active {
   font-size: var(--text-2xs);
   color: var(--text-faint);
   white-space: nowrap;
+}
+
+/* On narrow screens the fixed type column crowds the details and shoves the timestamp
+   off-screen, so stack the row: type + time share a line, details span underneath. */
+@media (max-width: 560px) {
+  .event-log li {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "type time"
+      "details details";
+    gap: var(--space-1) var(--space-3);
+  }
+
+  .event-log__type {
+    grid-area: type;
+  }
+
+  .event-log__details {
+    grid-area: details;
+  }
+
+  .event-log__time {
+    grid-area: time;
+  }
 }
