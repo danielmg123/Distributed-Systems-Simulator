@@ -3,6 +3,7 @@ package com.dss.backend.model;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import lombok.Data;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -32,7 +33,7 @@ public class Simulation {
     private String id;
 
     private String name;
-    private List<Event> events;
+    private List<Event> events = new ArrayList<>();
     private SimulationStatus status;
 
     private SimulationConfig config;

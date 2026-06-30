@@ -40,7 +40,6 @@ export const api = {
   getNodeStatuses: (id) => request(`/api/simulations/${id}/nodes`),
   getTopology: (id) => request(`/api/simulations/${id}/topology`),
   getMetrics: (id) => request(`/api/simulations/${id}/metrics`),
-  getEvents: (id) => request(`/api/simulations/${id}/events`),
   updateNetworkConditions: (id, conditions) =>
     request(`/api/simulations/${id}/network-conditions`, { method: "PUT", ...json(conditions) }),
 };

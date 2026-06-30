@@ -1,11 +1,9 @@
 package com.dss.backend.controller;
 
-import com.dss.backend.dto.EventDTO;
 import com.dss.backend.dto.NetworkConditionsDTO;
 import com.dss.backend.dto.NodeDTO;
 import com.dss.backend.dto.ProposeRequestDTO;
 import com.dss.backend.dto.SimulationDTO;
-import com.dss.backend.mapper.EventMapper;
 import com.dss.backend.metrics.MetricsSnapshot;
 import com.dss.backend.mapper.SimulationMapper;
 import com.dss.backend.model.Simulation;
@@ -30,9 +28,6 @@ public class SimulationController {
 
     @Autowired
     private SimulationMapper simulationMapper;
-
-    @Autowired
-    private EventMapper eventMapper;
 
     @Operation(
             summary = "Get All Simulations",
@@ -148,19 +143,6 @@ public class SimulationController {
     public ResponseEntity<MetricsSnapshot> getSimulationMetrics(@PathVariable String id) {
         MetricsSnapshot snapshot = simulationService.getSimulationMetrics(id);
         return ResponseEntity.ok(snapshot);
-    }
-
-    @Operation(
-            summary = "Get Simulation Events",
-            description = "Retrieves a list of events associated with a simulation."
-    )
-    @GetMapping("/{id}/events")
-    public ResponseEntity<List<EventDTO>> getSimulationEvents(@PathVariable String id) {
-        Simulation simulation = simulationService.getSimulationByIdOrThrow(id);
-        List<EventDTO> eventDTOs = simulation.getEvents().stream()
-                .map(eventMapper::eventToEventDTO)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(eventDTOs);
     }
 
     @Operation(
