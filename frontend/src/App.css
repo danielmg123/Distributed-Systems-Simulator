@@ -602,6 +602,7 @@ button:active {
 /* ---------- Controls ---------- */
 .controls {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: var(--space-3);
 }
@@ -616,7 +617,10 @@ button:active {
   min-width: 0;
 }
 
+/* Pinned to the bottom of the panel so the destructive action reads as a footer and the
+   panel's height is used deliberately rather than left blank. */
 .controls__stop {
+  margin-top: auto;
   background: transparent;
   color: var(--status-failed);
   border-color: var(--status-failed-line);
@@ -707,18 +711,30 @@ button:active {
   margin: 0;
 }
 
+.event-log__empty {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+}
+
 .event-log li {
   display: grid;
   grid-template-columns: 150px 1fr auto;
   gap: var(--space-3);
   align-items: baseline;
-  padding: var(--space-2) 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-left: 2px solid var(--ev-color, transparent);
   border-bottom: var(--border-width) solid var(--border-subtle);
   font-size: var(--text-sm);
+  transition: background var(--transition-fast);
 }
 
 .event-log li:last-child {
   border-bottom: none;
+}
+
+.event-log li:hover {
+  background: color-mix(in srgb, var(--ev-color) 7%, transparent);
 }
 
 .event-log__type {
@@ -726,7 +742,7 @@ button:active {
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-wide);
-  color: var(--accent);
+  color: var(--ev-color, var(--accent));
 }
 
 .event-log__details {
