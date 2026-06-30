@@ -278,39 +278,62 @@ button:active {
 /* ---------- Nodes ---------- */
 .node-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   gap: var(--space-3);
 }
 
-.node-card {
-  background: var(--bg-inset);
-  border: var(--border-width) solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  text-align: center;
+.node-grid__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
-.node-card--active {
-  border-color: var(--status-active-line);
+/* color is set inline per node state; currentColor drives the border tint, dot, role,
+   and leader glow, and transitions so a failover or election eases between colors. */
+.node-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 128px;
+  padding: var(--space-3);
+  background: var(--bg-inset);
+  border: var(--border-width) solid;
+  border-color: color-mix(in srgb, currentColor 28%, var(--border-default));
+  border-radius: var(--radius-md);
+  color: var(--status-active);
+  transition: border-color var(--transition-base), box-shadow var(--transition-base),
+    color var(--transition-base), background var(--transition-base);
+}
+
+.node-card--leader {
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent),
+    0 0 16px color-mix(in srgb, currentColor 18%, transparent);
 }
 
 .node-card--failed {
-  border-color: var(--status-failed-line);
   background: var(--status-failed-soft);
+}
+
+.node-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .node-card__id {
   font-family: var(--font-mono);
+  font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
 }
 
-.node-card__status {
-  font-size: var(--text-2xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  color: var(--text-muted);
-  margin-top: 2px;
+.node-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+  box-shadow: 0 0 8px color-mix(in srgb, currentColor 60%, transparent);
 }
 
 .node-card__role {
@@ -318,35 +341,68 @@ button:active {
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-wide);
-  color: var(--accent);
-  margin-top: var(--space-1);
+  color: currentColor;
 }
 
 .node-card__committed {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.node-card__committed-label {
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-muted);
+}
+
+.node-card__committed-value {
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--status-active);
-  margin-top: var(--space-1);
   word-break: break-word;
 }
 
 .node-card__detail {
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
+  line-height: var(--leading-snug);
   color: var(--text-muted);
-  margin-top: 2px;
 }
 
 .node-card__actions {
-  margin-top: var(--space-3);
+  margin-top: auto;
+  padding-top: var(--space-1);
 }
 
-.node-card__actions button {
+.node-card__btn {
   width: 100%;
   padding: 5px 8px;
   font-size: var(--text-2xs);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
+  background: transparent;
+}
+
+.node-card__btn--fail {
+  color: var(--status-failed);
+  border-color: var(--status-failed-line);
+}
+
+.node-card__btn--fail:hover {
+  background: var(--status-failed-soft);
+  border-color: var(--status-failed);
+}
+
+.node-card__btn--recover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+.node-card__btn--recover:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 /* ---------- Topology (hero) ---------- */
@@ -595,24 +651,42 @@ button:active {
 }
 
 /* ---------- Metrics ---------- */
-.metrics-panel dl {
+.metrics-panel {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: var(--space-2) var(--space-3);
-  margin: 0;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
 }
 
-.metrics-panel dt {
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--bg-inset);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.metric__label {
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
   color: var(--text-muted);
-  font-size: var(--text-sm);
 }
 
-.metrics-panel dd {
-  margin: 0;
+.metric__value {
   font-family: var(--font-mono);
+  font-size: var(--text-lg);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
-  text-align: right;
+}
+
+.metric__value--good {
+  color: var(--status-active);
+}
+
+.metric__value--alert {
+  color: var(--status-failed);
 }
 
 .metrics-panel__empty {
