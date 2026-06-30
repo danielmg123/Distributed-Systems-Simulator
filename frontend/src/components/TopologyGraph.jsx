@@ -9,13 +9,11 @@ import { useEffect, useRef, useState } from "react";
 //     one-shot pulse from the leader/proposer on propose/commit.
 // All animation is driven by CSS plus a single effect that reacts only when the shared
 // WebSocket event list grows -- never per message, and no new backend events.
-const SIZE = 440;
-const CENTER = SIZE / 2;
-const LAYOUT_RADIUS = 140;
-const NODE_RADIUS = 26;
-// The glow circle is larger than the node and gets blurred, so SIZE leaves padding
-// around the ring to keep halos and the role caption (below the lowest node) in frame.
-const GLOW_RADIUS = 34;
+
+// Above this many nodes the per-node role caption is dropped for plain followers and
+// acceptors (which dominate the count and crowd the ring); the leader and candidates
+// stay labeled because those are the roles worth calling out.
+const ROLE_LABEL_LIMIT = 12;
 
 function stateOf(node) {
   if (!node || node.status === "FAILED") return "failed";
@@ -30,6 +28,20 @@ const STATE_COLOR = {
   active: "var(--status-active)",
   failed: "var(--status-failed)",
 };
+
+// Geometry scales with the node count so the ring stays legible from 3 to 20 nodes:
+// nodes and their glows shrink while the ring widens, and the viewBox grows to keep
+// everything (glow halos + the role caption below the lowest node) in frame. At small N
+// this reproduces the original 440 / r26 / ring140 look exactly.
+function geometry(n) {
+  const r = Math.max(18, Math.min(26, 32 - n)); // node radius
+  const ring = Math.min(180, 140 + Math.max(0, n - 12) * 5); // layout radius
+  const glow = r + 8;
+  const blur = Math.max(4, Math.round(r * 0.23));
+  const idFont = Math.round(8 + (r - 18) * 0.625); // 8px at r18 -> 13px at r26
+  const size = 2 * (ring + 2 * r + 28);
+  return { r, ring, glow, blur, idFont, size, center: size / 2 };
+}
 
 export default function TopologyGraph({ nodes, topology, events = [] }) {
   const [pulse, setPulse] = useState(null);
@@ -85,12 +97,16 @@ export default function TopologyGraph({ nodes, topology, events = [] }) {
     return null;
   }
 
+  const g = geometry(ids.length);
+  const showRole = (role) =>
+    role === "LEADER" || role === "CANDIDATE" || ids.length <= ROLE_LABEL_LIMIT;
+
   const pos = {};
   ids.forEach((id, i) => {
     const angle = (2 * Math.PI * i) / ids.length - Math.PI / 2;
     pos[id] = {
-      x: CENTER + LAYOUT_RADIUS * Math.cos(angle),
-      y: CENTER + LAYOUT_RADIUS * Math.sin(angle),
+      x: g.center + g.ring * Math.cos(angle),
+      y: g.center + g.ring * Math.sin(angle),
     };
   });
 
@@ -117,14 +133,14 @@ export default function TopologyGraph({ nodes, topology, events = [] }) {
   return (
     <div className="topology-graph">
       <svg
-        viewBox={`0 0 ${SIZE} ${SIZE}`}
+        viewBox={`0 0 ${g.size} ${g.size}`}
         className="topology-graph__svg"
         role="img"
         aria-label="Cluster topology graph"
       >
         <defs>
           <filter id="topo-glow" x="-75%" y="-75%" width="250%" height="250%">
-            <feGaussianBlur stdDeviation="6" />
+            <feGaussianBlur stdDeviation={g.blur} />
           </filter>
         </defs>
 
@@ -205,16 +221,22 @@ export default function TopologyGraph({ nodes, topology, events = [] }) {
                   className="topo-drift-y"
                   style={{ animationDuration: durY, animationDelay: delayY }}
                 >
-                  <circle className="topo-glow" r={GLOW_RADIUS} filter="url(#topo-glow)" />
-                  <circle className="topo-body" r={NODE_RADIUS} />
-                  <text className="topology-graph__id" x="0" y="4" textAnchor="middle">
+                  <circle className="topo-glow" r={g.glow} filter="url(#topo-glow)" />
+                  <circle className="topo-body" r={g.r} />
+                  <text
+                    className="topology-graph__id"
+                    x="0"
+                    y="4"
+                    textAnchor="middle"
+                    style={{ fontSize: g.idFont }}
+                  >
                     {id}
                   </text>
-                  {node?.roleLabel && (
+                  {node?.roleLabel && showRole(node.roleLabel) && (
                     <text
                       className="topology-graph__role"
                       x="0"
-                      y={NODE_RADIUS + 16}
+                      y={g.r + 14}
                       textAnchor="middle"
                     >
                       {node.roleLabel}
