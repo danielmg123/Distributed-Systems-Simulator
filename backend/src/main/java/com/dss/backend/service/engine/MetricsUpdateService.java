@@ -60,7 +60,9 @@ public class MetricsUpdateService {
                         webSocketController.sendMetricsUpdate(simulationId, snapshot);
                     },
                     0,          // initial delay
-                    5,          // repeated period (5 seconds is a typical example)
+                    1,          // repeated period -- 1s so the metrics panel keeps pace
+                                // with the 1s node-status poll and the live event feed,
+                                // instead of lagging several seconds behind them
                     TimeUnit.SECONDS);
         } catch (RejectedExecutionException ignored) {
             // If the scheduler was shut down, no further action is needed.
