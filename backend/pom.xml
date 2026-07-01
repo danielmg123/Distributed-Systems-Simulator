@@ -87,6 +87,13 @@
 			<artifactId>springdoc-openapi-ui</artifactId>
 			<version>1.7.0</version>
 		</dependency>
+		<!-- In-memory token-bucket rate limiting for the mutation endpoints. Core only:
+		     no Redis or other distributed backend, since this runs as a single process. -->
+		<dependency>
+			<groupId>com.bucket4j</groupId>
+			<artifactId>bucket4j-core</artifactId>
+			<version>8.10.1</version>
+		</dependency>
 	</dependencies>
 
 	<build>
