@@ -1,5 +1,6 @@
 package com.dss.backend.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
@@ -15,6 +16,14 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    /**
+     * Browser origin allowed to open the WebSocket, driven by the same {@code ALLOWED_ORIGIN}
+     * environment variable as the REST CORS config (default: the local dev dashboard). Set
+     * it to the real dashboard URL at deploy time to lock the handshake down to that domain.
+     */
+    @Value("${ALLOWED_ORIGIN:http://localhost:3000}")
+    private String allowedOrigin;
 
     /**
      * Configure the in-memory message broker with a topic prefix.
@@ -41,8 +50,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
      */
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // The "/ws" endpoint is where clients initiate the WebSocket handshake.
-        // setAllowedOriginPatterns("*") for dev/demo. Lock this down in production.
-        registry.addEndpoint("/ws").setAllowedOriginPatterns("*").withSockJS();
+        // The "/ws" endpoint is where clients initiate the WebSocket handshake. The
+        // handshake origin is restricted to ALLOWED_ORIGIN (defaulting to the local dev
+        // dashboard) rather than "*", so a deployment locks it to its own domain.
+        registry.addEndpoint("/ws").setAllowedOriginPatterns(allowedOrigin).withSockJS();
     }
 }
