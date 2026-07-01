@@ -48,6 +48,11 @@ public class SimulationControllerTest {
         SimulationDTO simulationDTO = new SimulationDTO();
         simulationDTO.setId("sim1");
         simulationDTO.setName("Test Simulation");
+        com.dss.backend.dto.SimulationConfigDTO configDto = new com.dss.backend.dto.SimulationConfigDTO();
+        configDto.setAlgorithmType(com.dss.backend.model.ConsensusAlgorithmType.RAFT);
+        configDto.setNodeCount(5);
+        configDto.setTopologyType(com.dss.backend.model.TopologyType.MESH);
+        simulationDTO.setConfig(configDto);
 
         Mockito.when(simulationMapper.simulationDTOToSimulation(Mockito.any(SimulationDTO.class)))
                 .thenReturn(simulation);
@@ -62,6 +67,19 @@ public class SimulationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id", is("sim1")))
                 .andExpect(jsonPath("$.name", is("Test Simulation")));
+    }
+
+    @Test
+    @WithMockUser(username = "user", roles = {"USER"})
+    public void createSimulation_MissingConfig_ReturnsBadRequest() throws Exception {
+        // config is required: a missing one must be a 400, not a 500 from a later NPE.
+        SimulationDTO simulationDTO = new SimulationDTO();
+        simulationDTO.setName("No Config Simulation");
+
+        mockMvc.perform(post("/api/simulations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(simulationDTO)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

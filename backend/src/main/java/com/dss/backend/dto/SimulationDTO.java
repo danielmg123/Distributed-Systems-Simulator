@@ -1,6 +1,8 @@
 package com.dss.backend.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import java.util.List;
 import com.dss.backend.model.SimulationStatus;
@@ -21,6 +23,8 @@ public class SimulationDTO {
     @Schema(description = "Current status of the simulation", example = "RUNNING")
     private SimulationStatus status;
 
+    @Valid
+    @NotNull(message = "is required")
     @Schema(description = "Configuration settings for the simulation")
     private SimulationConfigDTO config;
 }

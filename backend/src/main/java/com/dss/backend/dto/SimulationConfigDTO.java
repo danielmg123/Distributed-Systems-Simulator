@@ -1,6 +1,7 @@
 package com.dss.backend.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import java.util.List;
 import com.dss.backend.model.ConsensusAlgorithmType;
@@ -10,12 +11,14 @@ import com.dss.backend.model.TopologyType;
 @Schema(description = "Data Transfer Object for simulation configuration details.")
 public class SimulationConfigDTO {
 
+    @NotNull(message = "is required")
     @Schema(description = "Type of consensus algorithm to be used", example = "PAXOS")
     private ConsensusAlgorithmType algorithmType;
 
     @Schema(description = "Number of nodes participating in the simulation", example = "5")
     private int nodeCount;
 
+    @NotNull(message = "is required")
     @Schema(description = "Type of network topology", example = "MESH")
     private TopologyType topologyType;
 

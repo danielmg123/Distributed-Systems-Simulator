@@ -10,6 +10,7 @@ import com.dss.backend.model.Simulation;
 import com.dss.backend.service.SimulationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -56,7 +57,7 @@ public class SimulationController {
             description = "Creates a new simulation with the provided configuration."
     )
     @PostMapping
-    public SimulationDTO createSimulation(@RequestBody SimulationDTO simulationDTO) {
+    public SimulationDTO createSimulation(@Valid @RequestBody SimulationDTO simulationDTO) {
         Simulation simulation = simulationMapper.simulationDTOToSimulation(simulationDTO);
         Simulation saved = simulationService.saveSimulation(simulation);
         return simulationMapper.simulationToSimulationDTO(saved);
