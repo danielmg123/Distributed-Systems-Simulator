@@ -23,8 +23,10 @@ services:
 
   db:
     image: mongo
-    ports:
-      - "27017:27017"
+    # No host port publish on purpose: only the backend talks to Mongo, and it reaches it
+    # over the compose network at db:27017. Keeping 27017 off the host means the database
+    # isn't exposed on the host's network surface. Add a temporary "ports" mapping locally
+    # if you need to inspect the data with a Mongo client.
     environment:
       # Override via a .env file or shell env for anything beyond local use.
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-admin}
