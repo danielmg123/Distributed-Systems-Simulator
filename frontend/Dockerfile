@@ -12,5 +12,8 @@ FROM nginx:alpine
 COPY --from=build /usr/src/app/build /usr/share/nginx/html
 # Replaces the default server block: SPA routing + /api and /ws reverse proxy.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+# On-theme holding page nginx serves when the backend proxy is unreachable (cold start).
+# Kept out of the Vite bundle so it ships only with the Docker image, not the static site.
+COPY nginx-waking.html /usr/share/nginx/html/waking.html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

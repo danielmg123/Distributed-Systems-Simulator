@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<!--
+  Shown by nginx when the backend can't be reached (see frontend/nginx.conf's error_page).
+  This is the Docker/compose deployment only: on a cold start the backend may take a
+  moment to boot, and this replaces nginx's default white 502 with an on-theme holding
+  page. The Render static site never serves this -- it has no backend proxy.
+  The page reloads itself every few seconds so it clears on its own once the backend is up.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="refresh" content="5" />
+    <title>Distributed Systems Simulator</title>
+    <style>
+      :root {
+        --bg: #0a0e14;
+        --text: #e6edf3;
+        --muted: #9aa7b8;
+        --faint: #647082;
+        --accent: #22d3ee;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 24px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.4), 0 0 14px rgba(34, 211, 238, 0.35);
+        animation: pulse 1.8s ease-in-out infinite;
+      }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 10px 0 0;
+        font-size: 14px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .hint {
+        margin-top: 6px;
+        font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+        font-size: 12px;
+        color: var(--faint);
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.35; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .dot { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand">
+        <span class="dot" aria-hidden="true"></span>
+        <h1>Distributed Systems Simulator</h1>
+      </div>
+      <p>Waking up the backend&hellip; this can take a moment on a cold start.</p>
+      <p class="hint">Retrying automatically&hellip;</p>
+    </main>
+  </body>
+</html>
