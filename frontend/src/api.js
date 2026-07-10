@@ -1,10 +1,16 @@
 // Thin fetch wrapper for the backend REST API. Plain fetch, no axios -- this project
 // has no other HTTP-client dependency and the API surface is small enough not to need
-// one. The CRA dev server proxies requests to http://localhost:8080 (see "proxy" in
-// package.json), so these paths are relative and CORS-free in dev.
+// one.
+//
+// Base URL: when VITE_API_URL is set at build time (e.g. a split deployment where the
+// static frontend and the backend live on different origins, like Render), it is used as
+// the absolute base for every call. When it's unset (local dev, or the nginx-proxied
+// Docker image) it falls back to empty, so paths stay relative and same-origin -- the
+// Vite dev-server proxy or nginx forwards them to the backend, CORS-free.
+export const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 
 async function request(path, options = {}) {
-  const res = await fetch(path, {
+  const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
   });

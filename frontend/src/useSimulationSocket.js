@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
+import { API_BASE } from "./api";
 
 // Subscribes to a running simulation's live event and metrics topics over STOMP
 // (backed by SockJS, matching the backend's WebSocketConfig). Reconnects
 // automatically if the connection drops. Returns the latest metrics snapshot and a
 // running list of events for the given simulationId, or null/[] if simulationId is
 // null (no simulation selected/running).
+//
+// The SockJS endpoint uses the same base URL as the REST calls (API_BASE): absolute when
+// VITE_API_URL is set for a split deployment, relative otherwise so the dev proxy / nginx
+// forwards it same-origin.
 export function useSimulationSocket(simulationId) {
   const [metrics, setMetrics] = useState(null);
   const [events, setEvents] = useState([]);
@@ -20,7 +25,7 @@ export function useSimulationSocket(simulationId) {
     }
 
     const client = new Client({
-      webSocketFactory: () => new SockJS("/ws"),
+      webSocketFactory: () => new SockJS(`${API_BASE}/ws`),
       reconnectDelay: 2000,
     });
 
