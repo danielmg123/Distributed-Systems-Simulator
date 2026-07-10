@@ -1,0 +1,47 @@
+# Render Blueprint for the Distributed Systems Simulator.
+# Spec: https://render.com/docs/blueprint-spec
+#
+# Two services:
+#   - dss-backend:  the Spring Boot REST + WebSocket API, built from backend/Dockerfile.
+#   - dss-frontend: the Vite bundle served from Render's static-site CDN (no nginx here;
+#                   nginx is only used by the docker-compose deployment).
+#
+# On Render the two services live on different origins, so the frontend makes cross-origin
+# calls to the backend. That is wired up by two env vars: VITE_API_URL (the backend URL,
+# baked into the frontend bundle at build time) and ALLOWED_ORIGIN (the frontend URL, so
+# the backend's CORS and WebSocket handshake accept it).
+#
+# No secrets or cross-service URLs are hardcoded here: every env var marked `sync: false`
+# is filled in from the Render dashboard. See the deploy notes for exactly what to set.
+services:
+  - type: web
+    name: dss-backend
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /actuator/health
+    envVars:
+      # Authenticated MongoDB connection string (e.g. a MongoDB Atlas SRV URI). Render
+      # does not provide a managed Mongo, so point this at an external Mongo you control.
+      - key: SPRING_DATA_MONGODB_URI
+        sync: false
+      # The frontend's exact origin (scheme + host), so CORS and the WebSocket handshake
+      # accept it -- e.g. https://dss-frontend.onrender.com
+      - key: ALLOWED_ORIGIN
+        sync: false
+
+  - type: web
+    name: dss-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    envVars:
+      # Pin a modern Node so Vite 8 builds cleanly.
+      - key: NODE_VERSION
+        value: "22"
+      # The backend's absolute base URL, baked into the bundle at build time for the API
+      # and WebSocket calls -- e.g. https://dss-backend.onrender.com
+      - key: VITE_API_URL
+        sync: false
